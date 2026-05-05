@@ -1,0 +1,450 @@
+{
+  "name": "Shopping Platform News Scraper",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "node-1-schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.2 — 17개 키워드 + 채널 매핑 정적 데이터\nreturn [\n  { json: { keyword: \"쿠팡\", channel: \"온라인\" } },\n  { json: { keyword: \"11번가\", channel: \"온라인\" } },\n  { json: { keyword: \"지마켓\", channel: \"온라인\" } },\n  { json: { keyword: \"G마켓\", channel: \"온라인\" } },\n  { json: { keyword: \"컬리\", channel: \"온라인\" } },\n  { json: { keyword: \"마켓컬리\", channel: \"온라인\" } },\n  { json: { keyword: \"네이버쇼핑\", channel: \"온라인\" } },\n  { json: { keyword: \"배민\", channel: \"온라인\" } },\n  { json: { keyword: \"배달의민족\", channel: \"온라인\" } },\n  { json: { keyword: \"무신사\", channel: \"온라인\" } },\n  { json: { keyword: \"이마트\", channel: \"오프라인\" } },\n  { json: { keyword: \"SSG\", channel: \"오프라인\" } },\n  { json: { keyword: \"롯데마트\", channel: \"오프라인\" } },\n  { json: { keyword: \"홈플러스\", channel: \"오프라인\" } },\n  { json: { keyword: \"코스트코\", channel: \"오프라인\" } },\n  { json: { keyword: \"다이소\", channel: \"오프라인\" } },\n  { json: { keyword: \"올리브영\", channel: \"오프라인\" } }\n];"
+      },
+      "id": "node-2-keywords",
+      "name": "Keyword List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "node-3-loop",
+      "name": "Loop Over Keywords",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://news.google.com/rss/search?q={{ encodeURIComponent($json.keyword) }}&hl=ko&gl=KR",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 10000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; n8n-bot/1.0)"
+            }
+          ]
+        }
+      },
+      "id": "node-4-http",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "id": "node-5-wait",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "mode": "xmlToJson",
+        "options": {}
+      },
+      "id": "node-6-xml",
+      "name": "XML Parser",
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1.1,
+      "position": [1100, 0],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.7 — RSS JSON에서 기사 객체 추출\nconst data = $input.first().json;\nconst keyword = $('Loop Over Keywords').first().json.keyword;\nconst channel = $('Loop Over Keywords').first().json.channel;\n\n// XML 파싱 결과에서 items 추출\nlet items = [];\ntry {\n  const rss = data?.rss || data?.data?.rss;\n  if (rss?.channel?.item) {\n    items = Array.isArray(rss.channel.item) ? rss.channel.item : [rss.channel.item];\n  }\n} catch (e) {\n  // XML 파싱 실패 시 빈 배열 반환\n  return [];\n}\n\nconst articles = items.map(item => ({\n  keyword,\n  channel,\n  title: (item.title || item.title?._text || '').toString(),\n  link: (item.link || item.link?._text || '').toString(),\n  pubDate: (item.pubDate || item.pubDate?._text || '').toString(),\n  source: (item.source?._text || item.source?._ || item.source || '').toString()\n}));\n\nreturn articles.filter(a => a.title && a.link).map(a => ({ json: a }));"
+      },
+      "id": "node-7-extractor",
+      "name": "Article Extractor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "node-8-merge",
+      "name": "Merge All Articles",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.9 — 최근 24시간 내 발행 기사만 유지\n// Plan SC: SC-1 (기존 Apps Script와 동일한 수집 품질)\nconst now = new Date();\nconst oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);\n\nconst filtered = $input.all().filter(item => {\n  try {\n    const pubDate = new Date(item.json.pubDate);\n    return pubDate >= oneDayAgo && !isNaN(pubDate.getTime());\n  } catch (e) {\n    return false;\n  }\n});\n\nreturn filtered;"
+      },
+      "id": "node-9-timefilter",
+      "name": "Time Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.10 — 야구/할인 제외 필터\n// Plan SC: SC-1 (기존 Apps Script와 동일한 필터링 품질)\nconst baseballExcludeKeywords = [\n  \"랜더스\", \"야구\", \"투수\", \"타자\", \"홈런\", \"안타\", \"포수\", \"감독\", \"경기\", \"KBO\",\n  \"선수\", \"드래프트\", \"이닝\", \"타율\", \"방어율\", \"불펜\", \"선발\", \"포스트시즌\", \"한국시리즈\",\n  \"우승\", \"준우승\", \"응원단\", \"마운드\", \"타격\", \"수비\", \"삼진\", \"볼넷\", \"도루\", \"실책\",\n  \"타점\", \"득점\", \"구단\", \"구단주\", \"코치\", \"FA\", \"트레이드\", \"퓨처스리그\", \"시범경기\",\n  \"플레이오프\", \"병살타\", \"로테이션\", \"타순\", \"청백전\", \"타구\", \"베이스러닝\", \"타격폼\",\n  \"야구장\", \"구장\", \"마무리\", \"셋업맨\", \"불펜투수\", \"클린업타자\", \"리드오프\", \"대타\", \"대주자\",\n  \"교체투수\", \"중계\", \"해설\", \"심판\", \"판정\", \"스트라이크\", \"볼\", \"완투\", \"무실점\",\n  \"시리즈\", \"홈구장\", \"원정\", \"유니폼\", \"관중\", \"관중석\", \"응원\", \"타석\", \"피안타\",\n  \"피홈런\", \"구속\", \"제구력\", \"피출루\", \"피실점\", \"자책점\", \"직구\", \"슬라이더\", \"커브\",\n  \"체인지업\", \"포크볼\", \"스플리터\", \"투심\", \"싱커\", \"커터\", \"서브마린\", \"변화구\", \"팀\",\n  \"순위\", \"전력\", \"기록\", \"기록경신\", \"쉬프트\", \"광고판\", \"베터리\", \"배트\", \"글러브\",\n  \"타구속도\", \"타구각\", \"클래식야구\", \"전력분석\", \"스카우트\", \"출루율\", \"장타율\", \"OPS\",\n  \"노히트노런\", \"끝내기\", \"연장전\", \"삼구삼진\", \"주루\", \"수비율\", \"수비실책\"\n];\n\nconst ssgPlayerNames = [\n  \"김건우\", \"김광현\", \"김도현\", \"김민\", \"김준영\", \"김택형\", \"김현재\", \"노경은\", \"도재현\",\n  \"드류 앤더슨\", \"문승원\", \"미치 화이트\", \"박기호\", \"박상후\", \"박성빈\", \"박시후\", \"박종훈\",\n  \"백승건\", \"서진용\", \"송영진\", \"신지환\", \"안현서\", \"이건욱\", \"이도우\", \"이로운\", \"이승훈\",\n  \"임성준\", \"장지훈\", \"전영준\", \"정동윤\", \"조병현\", \"조요한\", \"천범석\", \"최민준\", \"최수호\",\n  \"최현석\", \"한두솔\", \"한지헌\", \"김규민\", \"김민식\", \"신범수\", \"이율예\", \"이지영\", \"조형우\",\n  \"이재원\", \"로맥\", \"최주환\", \"최정\", \"박성한\", \"정의윤\", \"최지훈\", \"한유섬\", \"추신수\",\n  \"전의산\", \"김성현\", \"오태곤\", \"에레디아\", \"박지환\"\n];\n\nreturn $input.all().filter(item => {\n  const title = item.json.title;\n  \n  // \"할인\" 제외\n  if (title.includes(\"할인\")) return false;\n  \n  // 야구 키워드 제외\n  const lowerTitle = title.toLowerCase();\n  const hasBaseball = baseballExcludeKeywords.some(\n    word => lowerTitle.includes(word.toLowerCase())\n  );\n  if (hasBaseball) return false;\n  \n  // SSG 선수명 제외\n  const hasPlayer = ssgPlayerNames.some(name => title.includes(name));\n  if (hasPlayer) return false;\n  \n  return true;\n});"
+      },
+      "id": "node-10-exclusion",
+      "name": "Exclusion Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.11 — Levenshtein 유사도 기반 중복 제거\n// Plan SC: SC-1 (기존 Apps Script와 동일한 중복 제거)\nfunction getLevenshteinSimilarity(str1, str2) {\n  const len1 = str1.length;\n  const len2 = str2.length;\n  \n  if (len1 === 0) return 0;\n  if (len2 === 0) return 0;\n  \n  const dp = Array(len1 + 1).fill(null).map(() => Array(len2 + 1).fill(0));\n  \n  for (let i = 0; i <= len1; i++) dp[i][0] = i;\n  for (let j = 0; j <= len2; j++) dp[0][j] = j;\n  \n  for (let i = 1; i <= len1; i++) {\n    for (let j = 1; j <= len2; j++) {\n      const cost = str1[i-1] === str2[j-1] ? 0 : 1;\n      dp[i][j] = Math.min(dp[i-1][j]+1, dp[i][j-1]+1, dp[i-1][j-1]+cost);\n    }\n  }\n  \n  const distance = dp[len1][len2];\n  return (Math.max(len1, len2) - distance) / Math.max(len1, len2);\n}\n\nconst processed = [];\nconst results = [];\n\nfor (const item of $input.all()) {\n  // 제목에서 언론사 정보 제거\n  const title = item.json.title.replace(/ - [^-]+$/, \"\");\n  \n  const isSimilar = processed.some(\n    prev => getLevenshteinSimilarity(prev, title) > 0.2\n  );\n  \n  if (!isSimilar) {\n    processed.push(title);\n    results.push({ json: { ...item.json, title } });\n  }\n}\n\nreturn results;"
+      },
+      "id": "node-11-dedup",
+      "name": "Deduplication",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.12 — 기사 유형 자동 분류\n// Plan SC: SC-1 (기존 Apps Script와 동일한 분류)\nreturn $input.all().map(item => {\n  const title = item.json.title;\n  let type = \"일반 뉴스\";\n  \n  if (title.includes(\"출시\") || title.includes(\"신제품\")) type = \"신제품 출시\";\n  else if (title.includes(\"확대\") || title.includes(\"점포\") || title.includes(\"매장\")) type = \"사업 확장\";\n  else if (title.includes(\"배송\") || title.includes(\"물류\") || title.includes(\"운송\")) type = \"물류/배송 관련\";\n  else if (title.includes(\"투자\") || title.includes(\"자금\") || title.includes(\"매출\")) type = \"투자/매출 관련\";\n  else if (title.includes(\"채용\") || title.includes(\"인재\") || title.includes(\"고용\")) type = \"인재 채용\";\n  else if (title.includes(\"협업\") || title.includes(\"파트너십\") || title.includes(\"제휴\")) type = \"협업/제휴\";\n  else if (title.includes(\"고객\") || title.includes(\"이용자\")) type = \"고객 관련\";\n  \n  return { json: { ...item.json, type } };\n});"
+      },
+      "id": "node-12-classifier",
+      "name": "Type Classifier",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2420, 0]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-4o",
+        "messages": {
+          "values": [
+            {
+              "content": "=당신은 쇼핑/유통 업계 뉴스 분석 전문가입니다.\n주어진 뉴스 기사 목록을 분석하여 다음을 제공하세요:\n1. 전체 트렌드 요약 (3-5문장)\n2. 주요 인사이트 3-5개 (bullet point)\n3. 주목할 키워드별 동향\n\n간결하고 비즈니스 의사결정에 도움이 되는 형태로 작성하세요. 한국어로 작성하세요.",
+              "role": "system"
+            },
+            {
+              "content": "=오늘의 쇼핑 플랫폼 뉴스 ({{ $input.all().length }}건):\n\n{{ $input.all().map(item => `[${item.json.channel}/${item.json.keyword}] ${item.json.title} (${item.json.type})`).join('\\n') }}",
+              "role": "user"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 1000,
+          "temperature": 0.3
+        }
+      },
+      "id": "node-13-ai",
+      "name": "AI Summary",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [2640, 0],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.14 — Google Sheets 저장을 위한 데이터 준비\n// AI 요약 결과와 기사 목록을 함께 전달\nconst aiSummary = $('AI Summary').first()?.json?.message?.content || '요약 생성 실패';\nconst articles = $('Type Classifier').all();\n\n// 기사 데이터를 Sheets 형식으로 변환\nreturn articles.map((item, idx) => ({\n  json: {\n    ...item.json,\n    aiSummary,\n    articleIndex: idx + 1,\n    formattedDate: new Date(item.json.pubDate).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })\n  }\n}));"
+      },
+      "id": "node-13b-prepare",
+      "name": "Prepare Output Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2860, 0]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "날짜": "={{ $json.formattedDate }}",
+            "채널": "={{ $json.channel }}",
+            "키워드": "={{ $json.keyword }}",
+            "유형": "={{ $json.type }}",
+            "제목": "={{ $json.title }}",
+            "링크": "={{ $json.link }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "node-14-sheets",
+      "name": "Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [3080, -200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_NOTION_DATABASE_ID"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "제목",
+              "title": "={{ $json.title }}"
+            },
+            {
+              "key": "날짜",
+              "date": "={{ $json.pubDate }}"
+            },
+            {
+              "key": "채널",
+              "select": "={{ $json.channel }}"
+            },
+            {
+              "key": "키워드",
+              "select": "={{ $json.keyword }}"
+            },
+            {
+              "key": "유형",
+              "select": "={{ $json.type }}"
+            },
+            {
+              "key": "링크",
+              "url": "={{ $json.link }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-15-notion",
+      "name": "Notion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [3300, -200],
+      "credentials": {
+        "notionApi": {
+          "id": "NOTION_CREDENTIAL_ID",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.16 — Slack 메시지 포맷팅\nconst articles = $input.all();\nconst aiSummary = articles[0]?.json?.aiSummary || '요약 없음';\n\nconst onlineArticles = articles\n  .filter(i => i.json.channel === '온라인')\n  .slice(0, 5)\n  .map(i => `• <${i.json.link}|${i.json.title}> (${i.json.keyword})`)\n  .join('\\n');\n\nconst offlineArticles = articles\n  .filter(i => i.json.channel === '오프라인')\n  .slice(0, 5)\n  .map(i => `• <${i.json.link}|${i.json.title}> (${i.json.keyword})`)\n  .join('\\n');\n\nconst today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });\n\nconst message = `📰 *쇼핑 플랫폼 뉴스 브리핑* (${today})\\n\\n*🤖 AI 요약:*\\n${aiSummary}\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n*📋 주요 기사 (총 ${articles.length}건)*\\n\\n*[온라인]*\\n${onlineArticles || '• 해당 없음'}\\n\\n*[오프라인]*\\n${offlineArticles || '• 해당 없음'}`;\n\nreturn [{ json: { message, totalCount: articles.length } }];"
+      },
+      "id": "node-16a-slack-format",
+      "name": "Format Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 0]
+    },
+    {
+      "parameters": {
+        "channel": "YOUR_SLACK_CHANNEL_ID",
+        "text": "={{ $json.message }}",
+        "otherOptions": {}
+      },
+      "id": "node-16-slack",
+      "name": "Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [3300, 0],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "SLACK_CREDENTIAL_ID",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Design Ref: §4.17 — HTML 이메일 본문 생성\n// Plan SC: SC-3 (이메일 발송, 기존 형식 유지)\nconst articles = $input.all();\nconst aiSummary = articles[0]?.json?.aiSummary || '요약 생성 실패';\nconst now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });\n\nfunction escapeHtml(text) {\n  return String(text)\n    .replace(/&/g, \"&amp;\")\n    .replace(/</g, \"&lt;\")\n    .replace(/>/g, \"&gt;\")\n    .replace(/\"/g, \"&quot;\")\n    .replace(/'/g, \"&#39;\");\n}\n\nlet rows = '';\narticles.forEach((item, idx) => {\n  const a = item.json;\n  rows += `<tr>\n    <td style=\"text-align:center;\">${idx + 1}</td>\n    <td style=\"text-align:center;\">${a.channel}</td>\n    <td style=\"text-align:center;\">${a.keyword}</td>\n    <td style=\"text-align:center;\">${a.type}</td>\n    <td style=\"text-align:left;\"><a href=\"${a.link}\" target=\"_blank\">${escapeHtml(a.title)}</a></td>\n    <td style=\"text-align:center;\">${a.formattedDate}</td>\n  </tr>`;\n});\n\nconst htmlBody = `\n<h2>쇼핑 플랫폼 뉴스 (최근 하루 내 발행분)</h2>\n<p><strong>🤖 AI 요약:</strong></p>\n<p style=\"background-color:#f8f9fa;padding:12px;border-radius:6px;\">${aiSummary.replace(/\\n/g, '<br>')}</p>\n<hr>\n<table border=\"1\" cellspacing=\"0\" cellpadding=\"8\" style=\"border-collapse:collapse;width:100%;font-size:13px;\">\n  <thead style=\"background-color:#f2f2f2;\">\n    <tr>\n      <th style=\"text-align:center;\">#</th>\n      <th style=\"text-align:center;\">채널</th>\n      <th style=\"text-align:center;\">키워드</th>\n      <th style=\"text-align:center;\">유형</th>\n      <th style=\"text-align:center;\">제목</th>\n      <th style=\"text-align:center;\">발행일</th>\n    </tr>\n  </thead>\n  <tbody>\n    ${rows}\n  </tbody>\n</table>\n<p style=\"color:#666;font-size:11px;\">자동 생성: n8n News Scraper | ${now}</p>\n`;\n\nreturn [{ json: { htmlBody, subject: `쇼핑 플랫폼 뉴스 (최근 하루) - ${now}`, totalCount: articles.length } }];"
+      },
+      "id": "node-17a-email-format",
+      "name": "Format Email HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 200]
+    },
+    {
+      "parameters": {
+        "sendTo": "jh@avent.co.kr, aspark@avent.co.kr",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.htmlBody }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "node-17-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [3300, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [{ "node": "Keyword List", "type": "main", "index": 0 }]
+      ]
+    },
+    "Keyword List": {
+      "main": [
+        [{ "node": "Loop Over Keywords", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop Over Keywords": {
+      "main": [
+        null,
+        [{ "node": "HTTP Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [{ "node": "Wait", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [{ "node": "XML Parser", "type": "main", "index": 0 }]
+      ]
+    },
+    "XML Parser": {
+      "main": [
+        [{ "node": "Article Extractor", "type": "main", "index": 0 }]
+      ]
+    },
+    "Article Extractor": {
+      "main": [
+        [{ "node": "Loop Over Keywords", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge All Articles": {
+      "main": [
+        [{ "node": "Time Filter", "type": "main", "index": 0 }]
+      ]
+    },
+    "Time Filter": {
+      "main": [
+        [{ "node": "Exclusion Filter", "type": "main", "index": 0 }]
+      ]
+    },
+    "Exclusion Filter": {
+      "main": [
+        [{ "node": "Deduplication", "type": "main", "index": 0 }]
+      ]
+    },
+    "Deduplication": {
+      "main": [
+        [{ "node": "Type Classifier", "type": "main", "index": 0 }]
+      ]
+    },
+    "Type Classifier": {
+      "main": [
+        [{ "node": "AI Summary", "type": "main", "index": 0 }]
+      ]
+    },
+    "AI Summary": {
+      "main": [
+        [{ "node": "Prepare Output Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Output Data": {
+      "main": [
+        [
+          { "node": "Google Sheets", "type": "main", "index": 0 },
+          { "node": "Format Slack Message", "type": "main", "index": 0 },
+          { "node": "Format Email HTML", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Google Sheets": {
+      "main": [
+        [{ "node": "Notion", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Slack Message": {
+      "main": [
+        [{ "node": "Slack", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Email HTML": {
+      "main": [
+        [{ "node": "Send Email", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "news-scraper" },
+    { "name": "automation" }
+  ]
+}
