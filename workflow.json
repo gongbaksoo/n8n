@@ -314,7 +314,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Design Ref: §4.17 — HTML 이메일 본문 생성\n// Plan SC: SC-3 (이메일 발송, 기존 형식 유지)\nconst articles = $input.all();\nconst aiSummary = articles[0]?.json?.aiSummary || '요약 생성 실패';\nconst now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });\n\nfunction escapeHtml(text) {\n  return String(text)\n    .replace(/&/g, \"&amp;\")\n    .replace(/</g, \"&lt;\")\n    .replace(/>/g, \"&gt;\")\n    .replace(/\"/g, \"&quot;\")\n    .replace(/'/g, \"&#39;\");\n}\n\nlet rows = '';\narticles.forEach((item, idx) => {\n  const a = item.json;\n  rows += `<tr>\n    <td style=\"text-align:center;\">${idx + 1}</td>\n    <td style=\"text-align:center;\">${a.channel}</td>\n    <td style=\"text-align:center;\">${a.keyword}</td>\n    <td style=\"text-align:center;\">${a.type}</td>\n    <td style=\"text-align:left;\"><a href=\"${a.link}\" target=\"_blank\">${escapeHtml(a.title)}</a></td>\n    <td style=\"text-align:center;\">${a.formattedDate}</td>\n  </tr>`;\n});\n\nconst htmlBody = `\n<h2>쇼핑 플랫폼 뉴스 (최근 하루 내 발행분)</h2>\n<p><strong>🤖 AI 요약:</strong></p>\n<p style=\"background-color:#f8f9fa;padding:12px;border-radius:6px;\">${aiSummary.replace(/\\n/g, '<br>')}</p>\n<hr>\n<table border=\"1\" cellspacing=\"0\" cellpadding=\"8\" style=\"border-collapse:collapse;width:100%;font-size:13px;\">\n  <thead style=\"background-color:#f2f2f2;\">\n    <tr>\n      <th style=\"text-align:center;\">#</th>\n      <th style=\"text-align:center;\">채널</th>\n      <th style=\"text-align:center;\">키워드</th>\n      <th style=\"text-align:center;\">유형</th>\n      <th style=\"text-align:center;\">제목</th>\n      <th style=\"text-align:center;\">발행일</th>\n    </tr>\n  </thead>\n  <tbody>\n    ${rows}\n  </tbody>\n</table>\n<p style=\"color:#666;font-size:11px;\">자동 생성: n8n News Scraper | ${now}</p>\n`;\n\nreturn [{ json: { htmlBody, subject: `쇼핑 플랫폼 뉴스 (최근 하루) - ${now}`, totalCount: articles.length } }];"
+        "jsCode": "// Design Ref: §4.17 — Gmail API용 이메일 본문 생성 (RFC 2822 + base64url)\n// Plan SC: SC-3 (이메일 발송, 기존 형식 유지)\nconst articles = $input.all();\nconst aiSummary = articles[0]?.json?.aiSummary || '요약 생성 실패';\nconst now = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });\n\nfunction escapeHtml(text) {\n  return String(text)\n    .replace(/&/g, \"&amp;\")\n    .replace(/</g, \"&lt;\")\n    .replace(/>/g, \"&gt;\")\n    .replace(/\"/g, \"&quot;\")\n    .replace(/'/g, \"&#39;\");\n}\n\nlet rows = '';\narticles.forEach((item, idx) => {\n  const a = item.json;\n  rows += `<tr>\n    <td style=\"text-align:center;\">${idx + 1}</td>\n    <td style=\"text-align:center;\">${a.channel}</td>\n    <td style=\"text-align:center;\">${a.keyword}</td>\n    <td style=\"text-align:center;\">${a.type}</td>\n    <td style=\"text-align:left;\"><a href=\"${a.link}\" target=\"_blank\">${escapeHtml(a.title)}</a></td>\n    <td style=\"text-align:center;\">${a.formattedDate}</td>\n  </tr>`;\n});\n\nconst htmlBody = `\n<h2>쇼핑 플랫폼 뉴스 (최근 하루 내 발행분)</h2>\n<p><strong>🤖 AI 요약:</strong></p>\n<p style=\"background-color:#f8f9fa;padding:12px;border-radius:6px;\">${aiSummary.replace(/\\n/g, '<br>')}</p>\n<hr>\n<table border=\"1\" cellspacing=\"0\" cellpadding=\"8\" style=\"border-collapse:collapse;width:100%;font-size:13px;\">\n  <thead style=\"background-color:#f2f2f2;\">\n    <tr>\n      <th style=\"text-align:center;\">#</th>\n      <th style=\"text-align:center;\">채널</th>\n      <th style=\"text-align:center;\">키워드</th>\n      <th style=\"text-align:center;\">유형</th>\n      <th style=\"text-align:center;\">제목</th>\n      <th style=\"text-align:center;\">발행일</th>\n    </tr>\n  </thead>\n  <tbody>\n    ${rows}\n  </tbody>\n</table>\n<p style=\"color:#666;font-size:11px;\">자동 생성: n8n News Scraper | ${now}</p>\n`;\n\nconst subject = `쇼핑 플랫폼 뉴스 (최근 하루) - ${now}`;\nconst toList = ['jh@avent.co.kr', 'aspark@avent.co.kr'];\n\n// RFC 2822 형식 이메일 구성\nconst boundary = '----=_Part_' + Date.now();\nconst rawEmail = [\n  `To: ${toList.join(', ')}`,\n  `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,\n  'MIME-Version: 1.0',\n  `Content-Type: multipart/alternative; boundary=\"${boundary}\"`,\n  '',\n  `--${boundary}`,\n  'Content-Type: text/html; charset=UTF-8',\n  'Content-Transfer-Encoding: base64',\n  '',\n  Buffer.from(htmlBody).toString('base64'),\n  `--${boundary}--`\n].join('\\r\\n');\n\n// base64url 인코딩 (Gmail API 요구사항)\nconst base64url = Buffer.from(rawEmail)\n  .toString('base64')\n  .replace(/\\+/g, '-')\n  .replace(/\\//g, '_')\n  .replace(/=+$/, '');\n\nreturn [{ json: { raw: base64url, subject, totalCount: articles.length } }];"
       },
       "id": "node-17a-email-format",
       "name": "Format Email HTML",
@@ -324,22 +324,24 @@
     },
     {
       "parameters": {
-        "sendTo": "jh@avent.co.kr, aspark@avent.co.kr",
-        "subject": "={{ $json.subject }}",
-        "message": "={{ $json.htmlBody }}",
-        "options": {
-          "appendAttribution": false
-        }
+        "method": "POST",
+        "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ raw: $json.raw }) }}",
+        "options": {}
       },
       "id": "node-17-email",
       "name": "Send Email",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [3300, 200],
       "credentials": {
-        "gmailOAuth2": {
-          "id": "GMAIL_CREDENTIAL_ID",
-          "name": "Gmail OAuth2"
+        "googleApi": {
+          "id": "WPlIfwYpUx3h0TpV",
+          "name": "Google Service Account"
         }
       }
     }
