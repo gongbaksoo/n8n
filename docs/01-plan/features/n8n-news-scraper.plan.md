@@ -98,7 +98,7 @@
 ### 3.4 AI 요약 (OpenAI/Claude Node)
 - **Input**: 필터링된 전체 기사 목록
 - **Output**: 트렌드 요약 (3-5문장), 주요 인사이트, 키워드별 동향
-- **Model**: GPT-4o 또는 Claude Sonnet (비용 효율)
+- **Model**: Google Gemini 2.0 Flash (무료 티어, GPT-4o에서 변경)
 
 ### 3.5 Google Sheets 저장
 - **Target**: 지정된 스프레드시트
@@ -159,8 +159,8 @@
 - Google Sheets OAuth2
 - Notion API Key
 - Slack Bot Token (or OAuth2)
-- Gmail/SMTP (or SendGrid)
-- OpenAI API Key (또는 Anthropic)
+- Gmail OAuth2 (Google Cloud OAuth2 Client ID 필요)
+- Google Gemini API Key (Google AI Studio 발급)
 
 ### 주의사항
 - Google News RSS는 공식 API가 아니므로 차단 가능성 있음 → User-Agent 설정 필요
@@ -187,24 +187,24 @@
 | 항목 | 상태 | 비고 |
 |------|------|------|
 | n8n 워크플로우 생성 | ✅ 완료 | ID: 6t0bgNHo7yGWM3PD |
-| OpenAI Credential | ✅ 연결 | id: bmPXre9ZSp9F7xfa |
+| Google Gemini Credential | ✅ 연결 | id: bOqjILXaQe93TSQa (GPT-4o에서 변경) |
 | Google Sheets Credential | ✅ 연결 | id: u9biJnMmTMX61aw5 |
 | Notion Credential | ✅ 연결 | id: I34bqtnWMHogzUqF |
-| Send Email (Google Service Account) | ✅ 연결 | id: WPlIfwYpUx3h0TpV |
-| Slack Credential | ⏳ 미연결 | ID 확인 필요 |
-| Google Sheets 스프레드시트 ID 설정 | ⏳ 미완 | 플레이스홀더 상태 |
-| Notion DB ID 설정 | ⏳ 미완 | 플레이스홀더 상태 |
-| Slack 채널 ID 설정 | ⏳ 미완 | 플레이스홀더 상태 |
-| 전체 테스트 실행 | ⏳ 미완 | Credentials 완료 후 |
-| 스케줄 활성화 | ⏳ 미완 | 테스트 통과 후 |
+| Gmail OAuth2 Credential | ✅ 연결 | id: spDs5DdZcw6Xtski |
+| 이메일 발송 테스트 | ✅ 성공 | Gmail API 활성화 후 정상 작동 |
+| Slack Credential | ⏳ 비활성화 | 노드 비활성화 상태, 추후 연결 |
+| Google Sheets 스프레드시트 ID 설정 | ⏳ 비활성화 | 노드 비활성화 상태, 추후 설정 |
+| Notion DB ID 설정 | ⏳ 비활성화 | 노드 비활성화 상태, 추후 설정 |
+| 스케줄 활성화 | ⏳ 미완 | 전체 노드 활성화 후 |
 
 ---
 
 ## Next Step
 
 ```
-1. Slack credential 연결
-2. 플레이스홀더 값 설정 (Sheets ID, Notion DB ID, Slack Channel ID)
-3. 수동 테스트 실행
-4. 스케줄 활성화
+1. Notion DB ID 설정 및 노드 활성화
+2. Google Sheets 스프레드시트 ID 설정 및 노드 활성화
+3. Slack credential 연결 및 노드 활성화
+4. 전체 통합 테스트
+5. 스케줄 활성화
 ```

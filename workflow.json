@@ -359,7 +359,7 @@
     },
     "Loop Over Keywords": {
       "main": [
-        null,
+        [{ "node": "Time Filter", "type": "main", "index": 0 }],
         [{ "node": "HTTP Request", "type": "main", "index": 0 }]
       ]
     },
@@ -381,11 +381,6 @@
     "Article Extractor": {
       "main": [
         [{ "node": "Loop Over Keywords", "type": "main", "index": 0 }]
-      ]
-    },
-    "Merge All Articles": {
-      "main": [
-        [{ "node": "Time Filter", "type": "main", "index": 0 }]
       ]
     },
     "Time Filter": {

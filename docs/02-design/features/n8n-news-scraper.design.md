@@ -684,6 +684,7 @@ workflow.json (n8n export)
 |---------|------|---------|--------|
 | 0.1 | 2026-05-04 | Initial draft — Option B (Clean) selected | Team |
 | 0.2 | 2026-05-05 | 워크플로우 배포 완료, Credentials 연결 상태 반영 | Team |
+| 0.3 | 2026-05-08 | AI Summary: OpenAI → Gemini 변경, Send Email: Gmail OAuth2로 변경, 루프 연결 수정, Merge 노드 제거 | Team |
 
 ---
 
@@ -691,20 +692,23 @@ workflow.json (n8n export)
 
 - **Workflow ID**: `6t0bgNHo7yGWM3PD`
 - **n8n Instance**: `localhost:5678`
-- **Deployed Nodes**: 20개
-- **Active**: No (Credentials 완료 후 활성화 예정)
+- **Deployed Nodes**: 19개 (Merge All Articles 제거)
+- **Active**: No (Notion/Sheets/Slack 설정 완료 후 활성화 예정)
 
 ### Credential Mapping (실제 연결 상태)
 
 | Node | Credential Type | Credential Name | ID | Status |
 |------|----------------|-----------------|-----|--------|
-| AI Summary | openAiApi | OpenAI API | bmPXre9ZSp9F7xfa | ✅ |
-| Google Sheets | googleSheetsOAuth2Api | Google Sheets account | u9biJnMmTMX61aw5 | ✅ |
-| Notion | notionApi | Notion account | I34bqtnWMHogzUqF | ✅ |
-| Send Email | googleApi | Google Service Account account | WPlIfwYpUx3h0TpV | ✅ |
-| Slack | slackApi | Slack account | ? | ⏳ |
+| AI Summary | googlePalmApi | Google Gemini API | bOqjILXaQe93TSQa | ✅ |
+| Google Sheets | googleSheetsOAuth2Api | Google Sheets account | u9biJnMmTMX61aw5 | ✅ (노드 비활성화) |
+| Notion | notionApi | Notion account | I34bqtnWMHogzUqF | ✅ (노드 비활성화) |
+| Send Email | gmailOAuth2 | Gmail OAuth2 | spDs5DdZcw6Xtski | ✅ 테스트 성공 |
+| Slack | slackOAuth2Api | ? | ? | ⏳ (노드 비활성화) |
 
 ### Design Deviation Notes
 
-- Send Email 노드: 원래 설계는 `gmailOAuth2`였으나, 사용자가 Google Service Account를 이미 보유하고 있어 `googleApi`로 변경
-- Slack 노드: 원래 설계는 `slackOAuth2Api`였으나, 실제 credential은 `slackApi` (Bot Token) 타입으로 변경 필요
+- AI Summary 노드: 원래 설계는 OpenAI GPT-4o였으나, 비용 초과로 Google Gemini 2.0 Flash로 변경
+- Send Email 노드: Gmail 노드 + Gmail OAuth2 자격 증명 사용 (Google Service Account는 Gmail API 미지원)
+- Merge All Articles 노드: SplitInBatches가 자동 누적하므로 불필요하여 제거
+- Loop Over Keywords: 완료 출력(output 0)이 Time Filter에 직접 연결
+- Slack/Sheets/Notion 노드: 플레이스홀더 값 미설정으로 현재 비활성화 상태
