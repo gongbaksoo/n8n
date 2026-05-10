@@ -68,9 +68,58 @@
 | Gmail OAuth2 | gmailOAuth2 | spDs5DdZcw6Xtski | ✅ 테스트 성공 |
 | Slack | slackOAuth2Api | ? | ⏳ (비활성화) |
 
-### 남은 작업
+### 남은 작업 (당시)
 1. Notion DB ID 설정 및 노드 활성화
 2. Google Sheets 스프레드시트 ID 설정 및 노드 활성화
 3. Slack credential 연결 및 노드 활성화
-4. 전체 통합 테스트
-5. 스케줄 활성화
+
+---
+
+## 2026-05-10: Notion 연결 완료 및 AI Summary 안정화
+
+### 주요 변경 사항
+
+#### 1. Google Sheets 노드 제거
+- 불필요하여 워크플로우에서 완전 삭제
+- 노드 수 19 → 18개
+
+#### 2. Notion 연결 완료
+- 기존 "업계 동향" DB에 연결 (id: `1e26d523e164805b9950f5197b8b216e`)
+- 링크된 DB가 아닌 원본 DB ID 사용 필수 (linked database API 미지원)
+- n8n 통합("n8n-sync")에 DB 공유 필요
+- 속성 key 형식: `속성명|타입` (예: `제목|title`, `URL|url`, `태그|multi_select`)
+- 매핑: 제목, URL, 태그(keyword), 관련분야(channel→이커머스/오프라인 동향), Summary, 텍스트(기사별 3줄 요약)
+
+#### 3. AI Summary 전면 재구축
+- **n8n Gemini 노드**: 모델 호환 문제로 사용 불가
+- **HTTP Request 노드**: 기사 제목 특수문자로 JSON 깨짐
+- **최종 방식**: Code 노드 + `this.helpers.httpRequest()` (Gemini API 직접 호출)
+- Gemini 2회 호출: 1차 전체 트렌드 요약 (이메일용) + 2차 기사별 3줄 요약 (Notion 텍스트 필드)
+- `thinkingConfig: { thinkingBudget: 0 }` 필수 (thinking 토큰이 출력 예산 소비)
+- `#N` 텍스트 마커 파싱 방식 (JSON 출력보다 안정적)
+
+#### 4. n8n 에디터 캐시 이슈 발견
+- API로 워크플로우 업데이트 후 브라우저 새로고침 필수
+- Test Workflow는 서버 버전이 아닌 에디터 캐시 버전으로 실행됨
+
+### 테스트 결과
+- 이메일 발송: ✅ 성공
+- AI 전체 요약 (Gemini): ✅ 성공
+- AI 기사별 3줄 요약: ✅ 성공
+- Notion 입력: ✅ 성공 (제목, URL, 태그, 관련분야, Summary, 텍스트)
+
+### 현재 워크플로우 구조
+```
+Schedule Trigger → Keyword List → Loop Over Keywords
+  → HTTP Request → Wait → XML Parser → Article Extractor → (loop back)
+  → (done) Time Filter → Exclusion Filter → Deduplication → Type Classifier
+  → AI Summary (Code, Gemini API 2회) → Prepare Output Data
+  → Notion ✅
+  → Format Email HTML → Send Email ✅
+  → Format Slack Message → Slack ⏸️
+```
+
+### 남은 작업
+1. Slack credential 연결 및 노드 활성화
+2. 전체 통합 테스트
+3. 스케줄 활성화 (Active = true)

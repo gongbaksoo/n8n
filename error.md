@@ -93,12 +93,72 @@
 
 ---
 
+## 2026-05-10: Notion 연결 및 AI Summary 안정화
+
+### Error 13: Notion Linked Database 미지원
+
+- **시점**: Notion 노드 실행 시
+- **에러 메시지**: `Database with ID ... is a linked database. Database retrievals do not support linked databases.`
+- **원인**: 사용자가 제공한 URL이 링크된 DB (뷰)이고 원본 DB가 아님
+- **해결**: 원본 DB ID (`1e26d523e164805b9950f5197b8b216e`) 사용
+
+### Error 14: Notion "resource not found"
+
+- **시점**: Notion 노드 실행 시
+- **에러 메시지**: `Could not find database... Make sure shared with your integration "n8n-sync"`
+- **원인**: Notion DB가 n8n 통합("n8n-sync")과 공유되지 않음
+- **해결**: Notion에서 DB → Connections → "n8n-sync" 추가
+
+### Error 15: Notion 속성 key 형식 오류
+
+- **시점**: Notion 노드 실행 시
+- **에러 메시지**: `body.properties.제목.title should be defined, instead was 'undefined'`
+- **원인**: n8n Notion 노드 v2.2는 key가 `속성명|타입` 형식이어야 함 (예: `제목|title`, `URL|url`, `태그|multi_select`)
+- **해결**: 모든 속성 key를 `이름|타입` 형식으로 변경
+
+### Error 16: Notion onError 마스킹
+
+- **시점**: Notion 노드 실행 시 — 28건 모두 Bad request이나 status: success
+- **원인**: `onError: continueRegularOutput` 설정으로 에러가 성공으로 처리됨
+- **교훈**: 디버깅 시 출력 데이터의 error 필드를 반드시 확인
+
+### Error 17: n8n Gemini 노드 모델 미지원
+
+- **시점**: AI Summary (n8n Gemini 노드) 실행 시
+- **에러 메시지**: `The resource you are requesting could not be found`
+- **원인**: n8n의 `@n8n/n8n-nodes-langchain.googleGemini` 노드가 내부적으로 다른 API 엔드포인트 사용
+- **해결**: n8n Gemini 노드 포기 → Code 노드 + `this.helpers.httpRequest()`로 Gemini API 직접 호출
+
+### Error 18: Gemini HTTP Request JSON 깨짐
+
+- **시점**: AI Summary (HTTP Request 노드) 실행 시
+- **에러 메시지**: `JSON parameter needs to be valid JSON`
+- **원인**: HTTP Request 노드의 expression에서 기사 제목의 특수문자(따옴표 등)가 JSON을 깨뜨림
+- **해결**: HTTP Request 노드 포기 → Code 노드로 변경 (JavaScript에서 JSON.stringify로 안전하게 처리)
+
+### Error 19: Code 노드 fetch() 미지원
+
+- **시점**: AI Summary (Code 노드) 실행 시
+- **원인**: n8n Code 노드 샌드박스에서 `fetch()`를 사용할 수 없음
+- **해결**: `this.helpers.httpRequest()` 사용
+
+### Error 20: Gemini thinking 토큰으로 출력 잘림
+
+- **시점**: 기사별 3줄 요약 생성 시
+- **에러 메시지**: `Unterminated string in JSON at position 1124`
+- **원인**: Gemini 2.5 Flash의 "thinking" 토큰이 출력 토큰 예산을 소비하여 응답이 잘림
+- **해결**: `thinkingConfig: { thinkingBudget: 0 }` 추가 + `maxOutputTokens: 16000` 증가
+
+### Error 21: n8n 에디터 캐시 — API 업데이트 미반영
+
+- **시점**: API로 워크플로우 업데이트 후 Test Workflow 실행 시
+- **원인**: n8n 에디터가 브라우저에 이전 버전 캐시. Test Workflow는 에디터 버전으로 실행
+- **해결**: 브라우저 새로고침(F5) 후 Test Workflow 실행
+
+---
+
 ## 미해결 이슈
 
 ### Slack Credential ID 미확인
 - **상태**: Slack 노드 비활성화 상태
 - **해결 방안**: n8n UI에서 Slack credential 확인 후 연결
-
-### Google Sheets / Notion 플레이스홀더
-- **상태**: 노드 비활성화 상태, 실제 ID 설정 필요
-- **해결 방안**: 스프레드시트 ID, Notion DB ID 입력 후 노드 활성화

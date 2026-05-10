@@ -685,30 +685,32 @@ workflow.json (n8n export)
 | 0.1 | 2026-05-04 | Initial draft — Option B (Clean) selected | Team |
 | 0.2 | 2026-05-05 | 워크플로우 배포 완료, Credentials 연결 상태 반영 | Team |
 | 0.3 | 2026-05-08 | AI Summary: OpenAI → Gemini 변경, Send Email: Gmail OAuth2로 변경, 루프 연결 수정, Merge 노드 제거 | Team |
+| 0.4 | 2026-05-10 | Notion 연결 완료, Google Sheets 제거, AI Summary Code 노드 전환, 기사별 3줄 요약 추가 | Team |
 
 ---
 
 ## Deployment Status
 
 - **Workflow ID**: `6t0bgNHo7yGWM3PD`
-- **n8n Instance**: `localhost:5678`
-- **Deployed Nodes**: 19개 (Merge All Articles 제거)
-- **Active**: No (Notion/Sheets/Slack 설정 완료 후 활성화 예정)
+- **n8n Instance**: `n8n.gongbaksoo.com`
+- **Deployed Nodes**: 18개
+- **Active**: No (Slack 연결 후 활성화 예정)
 
 ### Credential Mapping (실제 연결 상태)
 
 | Node | Credential Type | Credential Name | ID | Status |
 |------|----------------|-----------------|-----|--------|
-| AI Summary | googlePalmApi | Google Gemini API | bOqjILXaQe93TSQa | ✅ |
-| Google Sheets | googleSheetsOAuth2Api | Google Sheets account | u9biJnMmTMX61aw5 | ✅ (노드 비활성화) |
-| Notion | notionApi | Notion account | I34bqtnWMHogzUqF | ✅ (노드 비활성화) |
+| AI Summary | (Code 노드 내 HTTP 호출) | Google Gemini API Key | - | ✅ 테스트 성공 |
+| Notion | notionApi | Notion account | I34bqtnWMHogzUqF | ✅ 테스트 성공 |
 | Send Email | gmailOAuth2 | Gmail OAuth2 | spDs5DdZcw6Xtski | ✅ 테스트 성공 |
 | Slack | slackOAuth2Api | ? | ? | ⏳ (노드 비활성화) |
 
 ### Design Deviation Notes
 
-- AI Summary 노드: 원래 설계는 OpenAI GPT-4o였으나, 비용 초과로 Google Gemini 2.0 Flash로 변경
+- AI Summary 노드: OpenAI GPT-4o → Gemini 2.5 Flash로 변경. n8n Gemini 노드 호환 문제로 Code 노드 + HTTP Request 방식으로 전환. Gemini API 2회 호출 (전체 요약 + 기사별 3줄 요약). thinking 비활성화 필요 (thinkingBudget: 0)
 - Send Email 노드: Gmail 노드 + Gmail OAuth2 자격 증명 사용 (Google Service Account는 Gmail API 미지원)
 - Merge All Articles 노드: SplitInBatches가 자동 누적하므로 불필요하여 제거
+- Google Sheets 노드: 불필요하여 제거 (Notion으로 대체)
 - Loop Over Keywords: 완료 출력(output 0)이 Time Filter에 직접 연결
-- Slack/Sheets/Notion 노드: 플레이스홀더 값 미설정으로 현재 비활성화 상태
+- Notion 노드: 링크된 DB가 아닌 원본 DB ID 사용 필수. 제목+URL만 입력하면 Notion AI가 태그/관련분야/Summary 자동 채움 → 하지만 n8n에서 직접 채우는 것으로 변경
+- n8n 에디터 캐시: API로 워크플로우 업데이트 후 브라우저 새로고침(F5) 필수

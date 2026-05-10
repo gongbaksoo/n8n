@@ -186,25 +186,23 @@
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| n8n 워크플로우 생성 | ✅ 완료 | ID: 6t0bgNHo7yGWM3PD |
-| Google Gemini Credential | ✅ 연결 | id: bOqjILXaQe93TSQa (GPT-4o에서 변경) |
-| Google Sheets Credential | ✅ 연결 | id: u9biJnMmTMX61aw5 |
-| Notion Credential | ✅ 연결 | id: I34bqtnWMHogzUqF |
+| n8n 워크플로우 생성 | ✅ 완료 | ID: 6t0bgNHo7yGWM3PD, 18개 노드 |
+| AI Summary (Gemini 2.5 Flash) | ✅ 작동 | Code 노드 + HTTP Request 방식 (전체 요약 + 기사별 3줄 요약) |
 | Gmail OAuth2 Credential | ✅ 연결 | id: spDs5DdZcw6Xtski |
 | 이메일 발송 테스트 | ✅ 성공 | Gmail API 활성화 후 정상 작동 |
+| Notion Credential | ✅ 연결 | id: I34bqtnWMHogzUqF |
+| Notion DB 연결 | ✅ 성공 | 업계 동향 DB (id: 1e26d523e164805b9950f5197b8b216e) |
+| Notion 테스트 | ✅ 성공 | 제목, URL, 태그, 관련분야, Summary, 텍스트(AI 3줄 요약) 입력 확인 |
+| Google Sheets | ❌ 제거 | 불필요하여 노드 삭제 |
 | Slack Credential | ⏳ 비활성화 | 노드 비활성화 상태, 추후 연결 |
-| Google Sheets 스프레드시트 ID 설정 | ⏳ 비활성화 | 노드 비활성화 상태, 추후 설정 |
-| Notion DB ID 설정 | ⏳ 비활성화 | 노드 비활성화 상태, 추후 설정 |
-| 스케줄 활성화 | ⏳ 미완 | 전체 노드 활성화 후 |
+| 스케줄 활성화 | ⏳ 미완 | Slack 연결 후 |
 
 ---
 
 ## Next Step
 
 ```
-1. Notion DB ID 설정 및 노드 활성화
-2. Google Sheets 스프레드시트 ID 설정 및 노드 활성화
-3. Slack credential 연결 및 노드 활성화
-4. 전체 통합 테스트
-5. 스케줄 활성화
+1. Slack credential 연결 및 노드 활성화
+2. 전체 통합 테스트
+3. 스케줄 활성화 (Active = true)
 ```
