@@ -686,6 +686,7 @@ workflow.json (n8n export)
 | 0.2 | 2026-05-05 | 워크플로우 배포 완료, Credentials 연결 상태 반영 | Team |
 | 0.3 | 2026-05-08 | AI Summary: OpenAI → Gemini 변경, Send Email: Gmail OAuth2로 변경, 루프 연결 수정, Merge 노드 제거 | Team |
 | 0.4 | 2026-05-10 | Notion 연결 완료, Google Sheets 제거, AI Summary Code 노드 전환, 기사별 3줄 요약 추가 | Team |
+| 0.5 | 2026-05-11 | Notion Summary 한줄요약 변경, 야구 필터링 강화 (키워드 31개+선수 4명+타선), 스케줄 활성화 | Team |
 
 ---
 
@@ -694,7 +695,7 @@ workflow.json (n8n export)
 - **Workflow ID**: `6t0bgNHo7yGWM3PD`
 - **n8n Instance**: `n8n.gongbaksoo.com`
 - **Deployed Nodes**: 18개
-- **Active**: No (Slack 연결 후 활성화 예정)
+- **Active**: Yes (평일 오전 7시 KST)
 
 ### Credential Mapping (실제 연결 상태)
 
@@ -714,3 +715,5 @@ workflow.json (n8n export)
 - Loop Over Keywords: 완료 출력(output 0)이 Time Filter에 직접 연결
 - Notion 노드: 링크된 DB가 아닌 원본 DB ID 사용 필수. 제목+URL만 입력하면 Notion AI가 태그/관련분야/Summary 자동 채움 → 하지만 n8n에서 직접 채우는 것으로 변경
 - n8n 에디터 캐시: API로 워크플로우 업데이트 후 브라우저 새로고침(F5) 필수
+- Notion Summary: 기사별 한줄 요약 (Gemini 생성), 텍스트: 3줄 요약
+- 야구 필터링: 기존 97개 키워드 + 31개 추가 (잠실, 두산, 한화, LG 등 구단/구장) + SSG 선수명 4명 추가 (오명진, 배동현, 박준순, 잭 로그) + "타선"
