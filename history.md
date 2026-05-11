@@ -145,6 +145,10 @@ Schedule Trigger → Keyword List → Loop Over Keywords
 - 워크플로우 Active = true
 - 평일(월~금) 오전 7시 KST 자동 실행
 
+#### 4. 한줄 요약 프롬프트 가이드 설정
+- 형식: `[업체명] 핵심 내용` (예: [쿠팡] 전년비 쇼핑 결제액 30% 증가)
+- 한글 30자 이내, 주어는 기사 메인 업체명
+
 ### 남은 작업
 1. Slack credential 연결 및 노드 활성화
 2. 자동 실행 모니터링
