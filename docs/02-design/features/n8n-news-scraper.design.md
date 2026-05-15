@@ -687,6 +687,7 @@ workflow.json (n8n export)
 | 0.3 | 2026-05-08 | AI Summary: OpenAI → Gemini 변경, Send Email: Gmail OAuth2로 변경, 루프 연결 수정, Merge 노드 제거 | Team |
 | 0.4 | 2026-05-10 | Notion 연결 완료, Google Sheets 제거, AI Summary Code 노드 전환, 기사별 3줄 요약 추가 | Team |
 | 0.5 | 2026-05-11 | Notion Summary 한줄요약 변경, 야구 필터링 강화 (키워드 31개+선수 4명+타선), 스케줄 활성화 | Team |
+| 0.6 | 2026-05-15 | Dedup: Levenshtein→Jaccard(0.3), 원문스크래핑(batchexecute+Jina Reader), Notion 마크다운 본문 블록, 언론사 제외 필터 | Team |
 
 ---
 
@@ -694,7 +695,7 @@ workflow.json (n8n export)
 
 - **Workflow ID**: `6t0bgNHo7yGWM3PD`
 - **n8n Instance**: `n8n.gongbaksoo.com`
-- **Deployed Nodes**: 18개
+- **Deployed Nodes**: 20개
 - **Active**: Yes (평일 오전 7시 KST)
 
 ### Credential Mapping (실제 연결 상태)
@@ -717,3 +718,7 @@ workflow.json (n8n export)
 - n8n 에디터 캐시: API로 워크플로우 업데이트 후 브라우저 새로고침(F5) 필수
 - Notion Summary: 기사별 한줄 요약 (Gemini 생성), 텍스트: 3줄 요약
 - 야구 필터링: 기존 97개 키워드 + 31개 추가 (잠실, 두산, 한화, LG 등 구단/구장) + SSG 선수명 4명 추가 (오명진, 배동현, 박준순, 잭 로그) + "타선"
+- Deduplication: Levenshtein → Jaccard 단어 유사도 클러스터링 (임계값 0.3, 채널별 그룹화, TOP_N 제한 없음)
+- 원문 스크래핑: Google News batchexecute(signature/timestamp 필수) → Jina Reader API(r.jina.ai) → Gemini 마크다운 구조화
+- Notion 본문: Build Notion Blocks(마크다운→블록 변환) + Notion Add Content(PATCH blocks/{id}/children)
+- 스크래핑 불가 언론사: Exclusion Filter에서 source 기반 제외 (뉴시스, 브릿지경제)

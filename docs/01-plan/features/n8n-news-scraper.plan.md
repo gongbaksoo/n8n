@@ -78,9 +78,10 @@
 - **시간 필터**: 최근 24시간 내 발행 기사만
 - **제외 필터**:
   - "할인" 포함 기사 제외
-  - 야구 관련 키워드 (약 100개+) 포함 기사 제외
+  - 야구 관련 키워드 (약 130개+) 포함 기사 제외
   - SSG 랜더스 선수명 (약 60명) 포함 기사 제외
-- **중복 제거**: Levenshtein 유사도 > 0.2인 기사 제거
+  - 스크래핑 불가 언론사 제외 (뉴시스, 브릿지경제)
+- **중복 제거**: Jaccard 단어 유사도 > 0.3인 기사 클러스터링 (채널별 그룹화, 대표 기사 1건 선정)
 - **유형 자동 분류**:
   - 신제품 출시 / 사업 확장 / 물류배송 / 투자매출 / 인재채용 / 협업제휴 / 고객 관련 / 일반 뉴스
 - **출력 스키마**:
@@ -95,20 +96,18 @@
   }
   ```
 
-### 3.4 AI 요약 (OpenAI/Claude Node)
+### 3.4 AI 요약 (Gemini Code Node)
 - **Input**: 필터링된 전체 기사 목록
-- **Output**: 트렌드 요약 (3-5문장), 주요 인사이트, 키워드별 동향
-- **Model**: Google Gemini 2.0 Flash (무료 티어, GPT-4o에서 변경)
+- **Output**: 트렌드 요약 (3-5문장), 주요 인사이트, 키워드별 동향, 기사별 한줄/3줄 요약
+- **Model**: Google Gemini 2.5 Flash (무료 티어)
+- **원문 스크래핑**: Google News URL 디코딩(batchexecute) + Jina Reader API로 원문 마크다운 추출
+- **마크다운 생성**: 원문 기반 구조화된 마크다운 (요약/본문/핵심인사이트/메타정보)
 
-### 3.5 Google Sheets 저장
-- **Target**: 지정된 스프레드시트
-- **Columns**: 날짜, 채널, 키워드, 유형, 제목, 링크
-- **Mode**: Append (기존 데이터 유지, 새 행 추가)
-
-### 3.6 Notion 등록
-- **Target**: Notion Database
-- **Properties**: 날짜, 채널, 키워드, 유형, 제목, 링크
-- **Mode**: Create new page per article
+### 3.5 Notion 등록
+- **Target**: Notion Database (업계 동향)
+- **Properties**: 제목, URL, 태그(keyword), 관련분야(channel), Summary(한줄요약), 텍스트(3줄요약)
+- **Page Content**: AI 마크다운 본문 블록 (Notion API blocks/children)
+- **Mode**: Create page + Append content blocks
 
 ### 3.7 Slack 알림
 - **Channel**: 지정된 Slack 채널
@@ -138,16 +137,15 @@
 
 ### MVP 포함 (v1)
 - [x] Google News RSS 키워드 수집
-- [x] 야구/할인 필터링 + 중복 제거 + 유형 분류
-- [x] AI 전체 뉴스 요약
-- [x] Google Sheets 아카이빙
-- [x] Notion DB 등록
-- [x] Slack 알림
+- [x] 야구/할인 필터링 + Jaccard 클러스터링 중복 제거 + 유형 분류
+- [x] AI 전체 뉴스 요약 + 기사별 한줄/3줄 요약
+- [x] 원문 스크래핑 (Google News URL 디코딩 + Jina Reader)
+- [x] Notion DB 등록 + 마크다운 본문 블록
 - [x] 이메일 발송 (HTML 테이블)
 
 ### Out of Scope (v2+)
 - [ ] 추가 뉴스 소스 (특정 사이트 스크래핑, SNS)
-- [ ] 유사도 알고리즘 고도화
+- [ ] Slack 알림 연결
 - [ ] 사용자별 키워드 커스터마이징
 - [ ] 대시보드/웹 UI
 
@@ -186,16 +184,16 @@
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| n8n 워크플로우 생성 | ✅ 완료 | ID: 6t0bgNHo7yGWM3PD, 18개 노드 |
-| AI Summary (Gemini 2.5 Flash) | ✅ 작동 | Code 노드 + HTTP Request 방식 (전체 요약 + 기사별 3줄 요약) |
+| n8n 워크플로우 생성 | ✅ 완료 | ID: 6t0bgNHo7yGWM3PD, 20개 노드 |
+| Jaccard 클러스터링 | ✅ 완료 | Levenshtein → Jaccard 단어 유사도 (임계값 0.3) |
+| AI Summary (Gemini 2.5 Flash) | ✅ 작동 | 전체 요약 + 한줄/3줄 요약 + 원문 마크다운 생성 |
+| 원문 스크래핑 | ✅ 작동 | Google News URL 디코딩(batchexecute) + Jina Reader (성공률 ~80%) |
+| Notion 마크다운 본문 | ✅ 작동 | Build Notion Blocks + Notion Add Content (API blocks/children) |
 | Gmail OAuth2 Credential | ✅ 연결 | id: spDs5DdZcw6Xtski |
-| 이메일 발송 테스트 | ✅ 성공 | Gmail API 활성화 후 정상 작동 |
 | Notion Credential | ✅ 연결 | id: I34bqtnWMHogzUqF |
 | Notion DB 연결 | ✅ 성공 | 업계 동향 DB (id: 1e26d523e164805b9950f5197b8b216e) |
-| Notion 테스트 | ✅ 성공 | 제목, URL, 태그, 관련분야, Summary, 텍스트(AI 3줄 요약) 입력 확인 |
+| 스크래핑 불가 언론사 제외 | ✅ 완료 | 뉴시스, 브릿지경제 |
 | Google Sheets | ❌ 제거 | 불필요하여 노드 삭제 |
-| Notion Summary | ✅ 성공 | AI 한줄 요약 자동 입력 |
-| 야구 필터링 강화 | ✅ 완료 | 야구 키워드 31개 + 선수명 4명 + "타선" 추가 |
 | 스케줄 활성화 | ✅ 완료 | 평일 오전 7시 KST, Active = true |
 | Slack Credential | ⏳ 비활성화 | 노드 비활성화 상태, 추후 연결 |
 
@@ -206,4 +204,5 @@
 ```
 1. Slack credential 연결 및 노드 활성화
 2. 자동 실행 모니터링 (평일 오전 7시)
+3. 스크래핑 실패 언론사 추가 모니터링 및 excludeSources 업데이트
 ```

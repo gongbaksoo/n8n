@@ -152,3 +152,87 @@ Schedule Trigger → Keyword List → Loop Over Keywords
 ### 남은 작업
 1. Slack credential 연결 및 노드 활성화
 2. 자동 실행 모니터링
+
+---
+
+## 2026-05-15: Notion 마크다운 본문 + 원문 스크래핑 + Jaccard 클러스터링
+
+### 주요 변경 사항
+
+#### 1. Deduplication: Levenshtein → Jaccard 클러스터링
+- 기존 Levenshtein 유사도(O(m*n) 문자 비교) → Jaccard 단어 유사도(O(n) 집합 비교)로 교체
+- 채널별 그룹화 후 클러스터링, 대표 기사 1건 선정
+- 임계값: 0.3 (같은 이슈 판별)
+- TOP_N 제한 제거: 모든 고유 이슈 유지 (중복만 제거)
+
+#### 2. 원문 스크래핑 파이프라인 구축 (3단계)
+- **Step 1**: Google News 기사 페이지 HTML에서 signature/timestamp 추출
+- **Step 2**: batchexecute API + signature/timestamp로 실제 기사 URL 디코딩
+- **Step 3**: Jina Reader API(`r.jina.ai/`)로 실제 URL에서 마크다운 추출
+- 성공률: ~80% (일부 언론사 디코딩/추출 실패)
+
+#### 3. Notion 페이지 본문 마크다운 블록 추가
+- 새 노드 2개 추가: Build Notion Blocks + Notion Add Content
+- Notion 페이지 생성(속성) 후, API(`PATCH blocks/{id}/children`)로 본문 블록 추가
+- 마크다운 → Notion 블록 변환: heading_2/3, paragraph, numbered_list_item, bulleted_list_item, divider, callout
+- 볼드(**) 텍스트 annotations 지원
+- 스크래핑 실패 시 ⚠️ callout 블록 표시
+
+#### 4. Notion 본문 구조
+```
+## 📝 요약
+[업체명] 핵심 내용 한줄 요약
+1. 포인트1
+2. 포인트2
+3. 포인트3
+---
+## 📄 본문
+(원문 기반 구조화된 마크다운)
+---
+## 💡 핵심 인사이트
+- 인사이트1
+- 인사이트2
+---
+## 📊 메타 정보
+- 📅 발행일 / 📂 카테고리 / 🏷️ 태그 / ⭐ 유형 / 🔗 원본
+```
+
+#### 5. 스크래핑 불가 언론사 제외
+- Exclusion Filter에 `excludeSources: ["뉴시스", "브릿지경제"]` 추가
+- 같은 이슈의 다른 언론사 기사가 대표로 선정되도록 처리
+
+### 시도했으나 실패한 방법들
+| 방법 | 실패 원인 |
+|------|----------|
+| base64 직접 디코딩 | protobuf 인코딩으로 URL 추출 불가 |
+| batchexecute (signature 없이) | Google이 `[3]` 에러코드로 거부 |
+| Jina Reader 직접 (Google News URL) | HTTP 451 차단 |
+| batchexecute (잘못된 payload 구조) | 내부 배열 위치 오류로 null 반환 |
+
+### 최종 작동 방식
+```
+Google News URL
+  → HTML에서 signature/timestamp 추출
+  → batchexecute + sig/ts → 실제 기사 URL
+  → Jina Reader → 깨끗한 마크다운
+  → Gemini → 구조화된 마크다운 (요약/본문/인사이트/메타)
+  → Notion 페이지 본문 블록 추가
+```
+
+### 현재 워크플로우 구조 (20개 노드)
+```
+Schedule Trigger → Keyword List → Loop Over Keywords
+  → HTTP Request → Wait → XML Parser → Article Extractor → (loop back)
+  → (done) Time Filter → Exclusion Filter (야구/할인/언론사)
+  → Deduplication (Jaccard 0.3) → Type Classifier
+  → AI Summary (Gemini: 전체요약 + 한줄/3줄 + 원문스크래핑+마크다운)
+  → Prepare Output Data
+  → Notion → Build Notion Blocks → Notion Add Content
+  → Format Email HTML → Send Email
+  → Format Slack Message → Slack (비활성화)
+```
+
+### 남은 작업
+1. Slack credential 연결 및 노드 활성화
+2. 자동 실행 모니터링
+3. 스크래핑 실패 언론사 추가 모니터링

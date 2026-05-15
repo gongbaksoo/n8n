@@ -157,8 +157,60 @@
 
 ---
 
+---
+
+## 2026-05-15: Notion 마크다운 본문 + 원문 스크래핑 구현
+
+### Error 22: Google News URL base64 디코딩 실패
+
+- **시점**: AI Summary 노드에서 원문 스크래핑 시도 시
+- **원인**: Google News RSS 링크(`news.google.com/rss/articles/CBMi...`)는 protobuf 인코딩으로 단순 base64 디코딩 불가
+- **시도**: Buffer.from(base64, 'base64').toString()으로 URL 추출 시도 → URL 패턴 미발견
+- **해결**: batchexecute API 방식으로 전환 (Error 23 참조)
+
+### Error 23: batchexecute API에서 null 응답 (signature/timestamp 누락)
+
+- **시점**: batchexecute 호출 시 `[3]` 에러코드 반환
+- **응답**: `[["wrb.fr","Fbv4je",null,null,null,[3],"generic"]]`
+- **원인**: batchexecute 요청에 signature/timestamp 인증값이 없어서 Google이 거부
+- **해결**: Google News 기사 페이지 HTML에서 `data-n-a-sg`(signature), `data-n-a-ts`(timestamp) 추출 후 요청에 포함
+
+### Error 24: batchexecute payload 구조 오류
+
+- **시점**: signature/timestamp 포함 후에도 null 응답
+- **원인**: payload 내부 배열 구조가 Python googlenewsdecoder와 다름
+  - 잘못된 형식: `["garturlreq", [[locale_array], articleId, ts, sg]]` (내부 배열에 포함)
+  - 올바른 형식: `["garturlreq", [locale_array], "articleId", timestamp, "sg"]` (외부 별도 인자)
+  - locale 배열도 달랐음: 복잡한 값 대신 `["X","X",["X","X"],...]` 사용
+- **해결**: Python googlenewsdecoder 소스 코드의 정확한 payload 형식 적용 → 성공
+
+### Error 25: Jina Reader API HTTP 451 (Google News URL 직접 접근)
+
+- **시점**: Jina Reader에 Google News URL을 직접 전달 시
+- **에러 메시지**: `Request failed with status code 451` (Unavailable For Legal Reasons)
+- **원인**: Google News가 Jina Reader 서버의 접근을 법적 사유로 차단
+- **해결**: Google News URL을 먼저 batchexecute로 디코딩하여 실제 기사 URL 확보 → Jina Reader에 실제 URL 전달
+
+### Error 26: Build Notion Blocks 1건만 처리
+
+- **시점**: Notion 페이지 10건 중 1건에만 본문 블록 추가
+- **원인**: Code 노드에서 `$json.id`가 첫 번째 아이템만 참조 (Run Once for All Items 모드)
+- **해결**: `$input.all()` + `$('Prepare Output Data').all()`로 전체 아이템 순회
+
+### Error 27: 뉴시스/브릿지경제 스크래핑 실패
+
+- **시점**: 10건 중 2건 markdownContent = "요약 실패"
+- **원인**: 해당 언론사의 Google News URL이 batchexecute에서 디코딩 실패하거나 Jina Reader에서 콘텐츠 추출 불가
+- **해결**: Exclusion Filter에 `excludeSources: ["뉴시스", "브릿지경제"]` 추가하여 사전 제외
+
+---
+
 ## 미해결 이슈
 
 ### Slack Credential ID 미확인
 - **상태**: Slack 노드 비활성화 상태
 - **해결 방안**: n8n UI에서 Slack credential 확인 후 연결
+
+### 원문 스크래핑 성공률 (~80%)
+- **상태**: 일부 언론사에서 batchexecute 디코딩 또는 Jina Reader 추출 실패
+- **해결 방안**: 실패 언론사 모니터링 후 excludeSources에 추가
