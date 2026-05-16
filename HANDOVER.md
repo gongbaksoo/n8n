@@ -330,7 +330,98 @@ Notion API는 마크다운을 직접 받지 않으므로, 마크다운 텍스트
 
 ---
 
-## 5. 인프라/운영 설정
+## 5. 고전했던 부분 + 에러 이력
+
+### 원문 스크래핑: 4번 실패 후 5번째에 성공
+
+| 시도 | 방법 | 결과 | 실패 원인 |
+|------|------|------|----------|
+| 1차 | base64 직접 디코딩 | 전체 실패 | Google News URL이 protobuf 인코딩, 단순 base64로는 URL 추출 불가 |
+| 2차 | batchexecute (signature 없이) | 전체 실패 | Google이 `[3]` 에러코드 반환. signature/timestamp 인증값 필수 |
+| 3차 | batchexecute (signature 포함, 잘못된 payload) | 전체 실패 | payload 내부 배열 구조가 Python 원본과 달랐음 (아래 상세) |
+| 4차 | Jina Reader에 Google News URL 직접 전달 | HTTP 451 | Google이 Jina 서버의 접근을 법적 사유로 차단 |
+| **5차** | **HTML에서 sig/ts 추출 → 정확한 batchexecute → Jina Reader** | **성공 (85%)** | Python googlenewsdecoder 소스 코드의 정확한 형식 적용 |
+
+### batchexecute payload 구조 — 정확한 형식이 핵심
+
+**잘못된 형식** (3차 시도에서 실패):
+```javascript
+// articleId, timestamp, signature를 내부 배열 안에 넣음 → null 반환
+["garturlreq", [
+  ["en-US", "US", ["FINANCE_TOP_INDICES", "WEB_TEST_1_0_0"], null, null, 1, 1, "US:en", ...],
+  articleId, timestamp, signature  // ← 여기가 잘못됨
+]]
+```
+
+**올바른 형식** (Python googlenewsdecoder 원본):
+```javascript
+// articleId, timestamp, signature를 바깥 별도 인자로 배치 → 성공
+["garturlreq",
+  [["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,null,0,0,null,0],
+  "ARTICLE_ID",    // ← 3번째 인자 (문자열)
+  TIMESTAMP,       // ← 4번째 인자 (숫자, 따옴표 없이)
+  "SIGNATURE"      // ← 5번째 인자 (문자열)
+]
+```
+
+> locale 배열도 단순화된 `"X"` 플레이스홀더를 사용해야 함. 복잡한 값을 넣으면 실패.
+
+### Notion 본문 블록 추가: 1건만 처리되는 버그
+
+**증상**: 10건 기사 중 1건에만 본문 블록이 추가됨
+
+**원인**: Build Notion Blocks Code 노드에서 `$json.id`가 첫 번째 아이템만 참조 (Run Once for All Items 모드에서 `$json`은 첫 아이템만 가리킴)
+
+**해결**:
+```javascript
+// 잘못된 방식
+const pageId = $json.id;  // 첫 번째만 참조
+return [{ json: { pageId, ... } }];  // 1건만 출력
+
+// 올바른 방식
+const notionOutputs = $input.all();  // 전체 아이템
+const prepareOutputs = $('Prepare Output Data').all();
+const results = [];
+for (let i = 0; i < notionOutputs.length; i++) {
+  const pageId = notionOutputs[i].json.id;
+  const md = prepareOutputs[i]?.json?.markdownContent || '요약 실패';
+  results.push({ json: { pageId, requestBody: { children: mdToBlocks(md) } } });
+}
+return results;
+```
+
+### Code 노드 타임아웃 (300초)
+
+**증상**: 기사 50건+ 처리 시 `Task execution timed out after 300 seconds`
+
+**원인**: n8n의 워크플로우 타임아웃(UI 설정)과 **Code 노드 타임아웃(환경변수)**이 별개임
+
+**해결**: Docker 환경변수 추가 (워크플로우 UI 설정만으로는 해결 안 됨)
+```yaml
+# docker-compose.yml
+environment:
+  - N8N_RUNNERS_TASK_TIMEOUT=1800  # 30분
+```
+
+### n8n 에디터 캐시: API 업데이트 미반영
+
+**증상**: API로 코드를 업데이트했는데 Test Workflow 실행 시 이전 코드로 동작
+
+**원인**: n8n 에디터가 브라우저에 이전 버전을 캐시. F5 새로고침으로도 불완전
+
+**해결**: 에디터에서 해당 노드를 **직접 열어서 Save** 해야 확실히 반영됨. API 업데이트 후 항상 에디터에서 확인 필요.
+
+### Gmail OAuth 7일 토큰 만료
+
+**증상**: 일주일마다 `refresh token is invalid, expired, revoked` 에러
+
+**원인**: Google Cloud Console OAuth 앱이 "Testing" 모드 → 7일 자동 만료
+
+**해결**: "앱 게시(Publish App)" → 프로덕션 모드 전환 (Google 심사 불필요)
+
+---
+
+## 6. 인프라/운영 설정
 
 ### n8n Code 노드 타임아웃
 
