@@ -718,7 +718,9 @@ workflow.json (n8n export)
 - n8n 에디터 캐시: API로 워크플로우 업데이트 후 브라우저 새로고침(F5) 필수
 - Notion Summary: 기사별 한줄 요약 (Gemini 생성), 텍스트: 3줄 요약
 - 야구 필터링: 기존 97개 키워드 + 31개 추가 (잠실, 두산, 한화, LG 등 구단/구장) + SSG 선수명 4명 추가 (오명진, 배동현, 박준순, 잭 로그) + "타선"
-- Deduplication: Levenshtein → Jaccard 단어 유사도 클러스터링 (임계값 0.3, 채널별 그룹화, TOP_N 제한 없음)
+- Deduplication: Levenshtein → Jaccard 단어 유사도 클러스터링 (임계값 0.3, 키워드별 그룹화, 키워드당 Top 5)
 - 원문 스크래핑: Google News batchexecute(signature/timestamp 필수) → Jina Reader API(r.jina.ai) → Gemini 마크다운 구조화
 - Notion 본문: Build Notion Blocks(마크다운→블록 변환) + Notion Add Content(PATCH blocks/{id}/children)
-- 스크래핑 불가 언론사: Exclusion Filter에서 source 기반 제외 (뉴시스, 브릿지경제)
+- 스크래핑 불가 언론사: Exclusion Filter에서 source 기반 제외 (11곳: 뉴시스, 브릿지경제, 헤럴드경제, v.daum.net, 네이트, 아주경제, 파이낸셜뉴스, 게임플, 바이오타임즈, 로이슈, 더스쿠프)
+- Code 노드 타임아웃: N8N_RUNNERS_TASK_TIMEOUT=1800 (30분, Docker 환경변수)
+- Gmail OAuth: Google Cloud Console에서 프로덕션 모드 전환 (7일 토큰 만료 방지)

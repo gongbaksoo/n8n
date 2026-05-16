@@ -203,6 +203,32 @@
 - **원인**: 해당 언론사의 Google News URL이 batchexecute에서 디코딩 실패하거나 Jina Reader에서 콘텐츠 추출 불가
 - **해결**: Exclusion Filter에 `excludeSources: ["뉴시스", "브릿지경제"]` 추가하여 사전 제외
 
+### Error 28: Code 노드 타임아웃 (N8N_RUNNERS_TASK_TIMEOUT)
+
+- **시점**: 17개 키워드 전체 실행 시 AI Summary 노드
+- **에러 메시지**: `Task execution timed out after 300 seconds`
+- **원인**: n8n Code 노드 전용 타임아웃(300초)이 워크플로우 타임아웃(1시간)과 별도. 68건 스크래핑에 ~25분 소요
+- **해결**: Docker 환경변수 `N8N_RUNNERS_TASK_TIMEOUT=1800` 추가 (docker-compose.yml) + 컨테이너 재시작
+
+### Error 29: Gmail OAuth2 토큰 만료
+
+- **시점**: Send Email 노드 실행 시
+- **에러 메시지**: `The provided authorization grant or refresh token is invalid, expired, revoked`
+- **원인**: Google Cloud Console에서 OAuth 앱이 "Testing" 모드 → refresh token 7일 자동 만료
+- **해결**: Google Cloud Console → OAuth 동의 화면 → "앱 게시(Publish App)" → 프로덕션 모드 전환 + n8n에서 Gmail OAuth2 재연결
+
+### Error 30: 키워드 오타 "컴리" (에디터 캐시 관련)
+
+- **시점**: 키워드 17개 복원 후 테스트 시
+- **원인**: API로 업데이트한 "컬리"가 n8n 에디터 캐시에서 반영되지 않아 이전 버전 "컴리"로 실행됨
+- **해결**: 에디터에서 직접 수정 후 Save. API 업데이트 후에는 반드시 에디터에서 노드를 열어 확인/저장 필요
+
+### Error 31: Docker 재시작 후 스케줄 트리거 미작동
+
+- **시점**: N8N_RUNNERS_TASK_TIMEOUT 설정을 위해 컨테이너 재시작 후 다음 날 오전 7시
+- **원인**: 워크플로우 active: true 상태였지만 스케줄러가 cron을 재등록하지 못함
+- **해결**: 워크플로우 비활성화 → 재활성화 (deactivate → activate)
+
 ---
 
 ## 미해결 이슈
@@ -211,6 +237,6 @@
 - **상태**: Slack 노드 비활성화 상태
 - **해결 방안**: n8n UI에서 Slack credential 확인 후 연결
 
-### 원문 스크래핑 성공률 (~80%)
+### 원문 스크래핑 성공률 (~85%)
 - **상태**: 일부 언론사에서 batchexecute 디코딩 또는 Jina Reader 추출 실패
-- **해결 방안**: 실패 언론사 모니터링 후 excludeSources에 추가
+- **해결 방안**: 2회 연속 성공 없는 언론사를 excludeSources에 추가 (현재 11곳 제외)

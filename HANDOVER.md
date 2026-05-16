@@ -1,295 +1,338 @@
-# n8n 뉴스 스크래퍼 워크플로우 인수인계서
+# n8n 뉴스 스크래퍼 — 원문 스크래핑 + 중복 클러스터링 적용 가이드
 
-## 1. 프로젝트 개요
-
-Google News RSS를 통해 키워드별 뉴스를 자동 수집하고, AI 요약 후 Notion + 이메일로 발송하는 n8n 워크플로우.
-
-### 원본 워크플로우
-- **n8n 인스턴스**: `https://n8n.gongbaksoo.com`
-- **워크플로우 ID**: `6t0bgNHo7yGWM3PD`
-- **워크플로우명**: Shopping Platform News Scraper
-- **GitHub**: `https://github.com/gongbaksoo/n8n`
+> 이 문서는 Shopping Platform News Scraper(6t0bgNHo7yGWM3PD)에서 구현/검증된 내용을 다른 n8n 워크플로우에 적용하기 위한 참고 자료입니다.
 
 ---
 
-## 2. 워크플로우 구조 (18개 노드)
+## 1. Google News 원문 스크래핑 (3단계)
 
-```
-Schedule Trigger (평일 오전 7시 KST)
-  → Keyword List (Code: 키워드 배열 반환)
-  → Loop Over Keywords (SplitInBatches, batchSize: 1)
-    → HTTP Request (Google News RSS 호출)
-    → Wait (1초 딜레이, rate limit 방지)
-    → XML Parser (RSS XML → JSON)
-    → Article Extractor (Code: 기사 객체 추출)
-    → (loop back to Loop Over Keywords)
-  → (done) Time Filter (Code: 최근 24시간 필터)
-  → Exclusion Filter (Code: 야구/할인 키워드 제외)
-  → Deduplication (Code: Levenshtein 유사도 중복 제거)
-  → Type Classifier (Code: 기사 유형 자동 분류)
-  → AI Summary (Code: Gemini API 2회 호출)
-  → Prepare Output Data (Code: 출력 데이터 정리)
-  → Notion (DB 페이지 생성)
-  → Format Email HTML (Code: HTML 테이블 생성)
-  → Send Email (Gmail 노드)
-  → Format Slack Message (Code, 비활성화)
-  → Slack (비활성화)
-```
+Google News RSS의 기사 링크(`news.google.com/rss/articles/CBMi...`)는 실제 기사 URL이 아니라 protobuf로 인코딩된 리다이렉트 URL입니다. 실제 기사 본문을 가져오려면 3단계가 필요합니다.
 
----
+### Step 1: Google News 페이지에서 signature/timestamp 추출
 
-## 3. 새 워크플로우 생성 시 변경해야 할 항목
+Google News 기사 페이지 HTML에 디코딩에 필요한 인증값이 숨어 있습니다.
 
-### 3.1 반드시 변경
-| 항목 | 위치 | 설명 |
-|------|------|------|
-| **키워드 목록** | Keyword List 노드 | `keyword`와 `channel` 값 변경 |
-| **Notion DB ID** | Notion 노드 | 새 DB의 원본 ID (링크된 DB ID 아님!) |
-| **이메일 수신자** | Send Email 노드 | `sendTo` 값 |
-| **워크플로우 이름** | 워크플로우 속성 | 새 프로젝트에 맞는 이름 |
-
-### 3.2 필요 시 변경
-| 항목 | 위치 | 설명 |
-|------|------|------|
-| 제외 키워드 | Exclusion Filter 노드 | 새 키워드에 맞는 노이즈 필터 |
-| 유형 분류 규칙 | Type Classifier 노드 | 기사 분류 키워드 |
-| 스케줄 | Schedule Trigger 노드 | cron 표현식 |
-| AI 프롬프트 | AI Summary 노드 | 분야별 전문가 역할 설명 |
-| Notion 속성 매핑 | Notion 노드 | DB 스키마에 맞춤 |
-
----
-
-## 4. 자격 증명 (Credentials) — 재사용 가능
-
-이미 n8n에 등록된 자격 증명을 그대로 사용하면 됩니다.
-
-| Credential | Type | ID | 용도 |
-|-----------|------|-----|------|
-| Gmail OAuth2 | gmailOAuth2 | `spDs5DdZcw6Xtski` | 이메일 발송 |
-| Notion | notionApi | `I34bqtnWMHogzUqF` | Notion DB 입력 |
-| Google Gemini API Key | - | (Code 노드 내 하드코딩) | AI 요약 |
-
-**주의**: Gemini API Key는 Code 노드의 jsCode 안에 직접 포함되어 있습니다.
-```
-Key: AIzaSyBJPpQP0aDMWwTXrWOARUfz7Pd_B_KRsBQ
-```
-
----
-
-## 5. 핵심 기술 사항 (삽질 방지)
-
-### 5.1 n8n API로 워크플로우 배포 시
-```bash
-# API Key
-X-N8N-API-KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1ZjljYzZlOS1iZjBiLTRlZjAtYWFiMS00NjZkYjA0MmMzOTIiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiNDhhZTRlNTYtMTI1ZS00NmU1LTg4NzktMjBmNTMyZmIzNGI5IiwiaWF0IjoxNzc3OTgwNDM1fQ.mzf_sID1Y7czv9nfIbyGf4RUcktjmaIcOUJgfoNaoYQ
-
-# POST 시 tags 필드 제거 (read-only)
-# PUT 시 허용 필드만: name, nodes, connections, settings, staticData
-# n8n MCP 도구는 인증 실패할 수 있음 → curl 직접 호출 권장
-```
-
-### 5.2 SplitInBatches (Loop) 연결 — 가장 중요!
-```
-Loop Over Keywords의 connections:
-  output 0 (완료) → 다음 처리 노드 (Time Filter 등)  ← 반드시 연결!
-  output 1 (루프) → HTTP Request
-
-※ output 0을 null로 두면 루프 이후 노드가 전혀 실행되지 않음
-※ Merge 노드 불필요 — SplitInBatches가 자동 누적
-```
-
-### 5.3 AI Summary — Code 노드 + Gemini API 직접 호출
-```
-❌ n8n Gemini 노드 (@n8n/n8n-nodes-langchain.googleGemini) → 모델 호환 문제
-❌ HTTP Request 노드 → 기사 제목 특수문자로 JSON 깨짐
-❌ Code 노드 + fetch() → n8n 샌드박스에서 fetch 미지원
-✅ Code 노드 + this.helpers.httpRequest() → 정상 작동
-
-필수 설정:
-- thinkingConfig: { thinkingBudget: 0 }  ← thinking 토큰이 출력 예산 소비
-- maxOutputTokens: 16000  ← 충분히 크게
-- API 엔드포인트: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
-```
-
-### 5.4 Notion 노드 설정
-```
-❌ 링크된 DB URL의 ID 사용 → "linked database not supported" 에러
-✅ 원본 DB ID 사용 (fetch 도구로 ancestor-database URL에서 확인)
-
-속성 key 형식: "속성명|타입"
-  - 제목|title
-  - URL|url
-  - 태그|multi_select
-  - 관련 분야|multi_select
-  - Summary|rich_text
-  - 텍스트|rich_text
-
-Notion DB를 n8n 통합("n8n-sync")과 공유해야 함:
-  DB → 우측상단 ... → Connections → "n8n-sync" 추가
-```
-
-### 5.5 Gmail 노드
-```
-❌ Google Service Account (googleApi) → Gmail 노드 미지원
-✅ Gmail OAuth2 (gmailOAuth2) → 정상 작동
-
-Gmail API가 Google Cloud 프로젝트에서 활성화되어 있어야 함
-OAuth Redirect URI: https://n8n.gongbaksoo.com/rest/oauth2-credential/callback
-```
-
-### 5.6 n8n 에디터 캐시 주의
-```
-API로 워크플로우를 업데이트한 후, n8n 에디터에서 "Test Workflow" 실행하면
-에디터에 캐시된 이전 버전으로 실행됨!
-
-반드시 브라우저 새로고침(F5) 후 테스트할 것
-```
-
----
-
-## 6. 새 워크플로우 생성 절차 (Step by Step)
-
-### Step 1: 기존 워크플로우 복제
-```bash
-# 기존 워크플로우 가져오기
-curl -s -H "X-N8N-API-KEY: {API_KEY}" \
-  "https://n8n.gongbaksoo.com/api/v1/workflows/6t0bgNHo7yGWM3PD" \
-  > base_workflow.json
-
-# 또는 GitHub에서 workflow.json 참조
-```
-
-### Step 2: 키워드 변경
-Keyword List 노드의 jsCode에서 키워드 배열 수정:
 ```javascript
-return [
-  { json: { keyword: "새키워드1", channel: "카테고리A" } },
-  { json: { keyword: "새키워드2", channel: "카테고리B" } },
-  // ...
+// article ID 추출 (URL에서)
+const articleId = link.match(/\/(?:rss\/)?articles\/([^?]+)/)?.[1];
+
+// Google News 기사 페이지 접근 (두 URL 중 하나 시도)
+const urls = [
+  'https://news.google.com/articles/' + articleId,
+  'https://news.google.com/rss/articles/' + articleId
 ];
+
+const html = await this.helpers.httpRequest({
+  method: 'GET', url: urls[0],
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'ko-KR,ko;q=0.9'
+  },
+  followRedirect: true, timeout: 15000, json: false
+});
+
+// HTML에서 signature, timestamp 추출
+const signature = html.match(/data-n-a-sg="([^"]+)"/)?.[1];
+const timestamp = html.match(/data-n-a-ts="([^"]+)"/)?.[1];
 ```
 
-### Step 3: Exclusion Filter 수정
-새 키워드에 맞는 노이즈 제외 키워드 설정.
-현재 야구 관련 키워드 128개 + SSG 선수명 63명이 설정되어 있음.
+- 첫 번째 URL(`/articles/`)이 실패하면 두 번째(`/rss/articles/`)로 폴백
+- signature/timestamp가 없으면 디코딩 불가 → 해당 기사 스크래핑 포기
 
-### Step 4: Notion DB 준비
-1. 기존 "업계 동향" DB를 사용하거나 새 DB 생성
-2. DB를 "n8n-sync" 통합과 공유
-3. **원본 DB ID** 확인 (링크된 DB ID가 아닌!)
-4. Notion 노드의 `databaseId` 값 변경
-5. 속성 매핑이 DB 스키마와 일치하는지 확인
+### Step 2: batchexecute API로 실제 기사 URL 디코딩
 
-### Step 5: 이메일 수신자 변경
-Send Email 노드의 `sendTo` 값 수정.
+Google 내부 API에 signature/timestamp와 함께 요청하면 실제 기사 URL을 반환합니다.
 
-### Step 6: n8n에 배포
-```bash
-# POST로 새 워크플로우 생성 (tags 필드 제거 필수)
-python3 -c "
-import json
-with open('workflow.json') as f:
-    wf = json.load(f)
-# tags, id, createdAt 등 제거
-for key in ['tags', 'id', 'createdAt', 'updatedAt', 'versionId']:
-    wf.pop(key, None)
-with open('deploy.json', 'w') as f:
-    json.dump(wf, f, ensure_ascii=False)
-"
+```javascript
+// payload 구성 (Python googlenewsdecoder 소스 코드 기반, 이 형식 그대로 사용할 것)
+const paramsStr = '["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,null,0,0,null,0],"' + articleId + '",' + timestamp + ',"' + signature + '"]';
+const payload = ['Fbv4je', paramsStr];
+const reqBody = 'f.req=' + encodeURIComponent(JSON.stringify([[payload]]));
 
-curl -s -X POST \
-  -H "X-N8N-API-KEY: {API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d @deploy.json \
-  "https://n8n.gongbaksoo.com/api/v1/workflows"
+const resp = await this.helpers.httpRequest({
+  method: 'POST',
+  url: 'https://news.google.com/_/DotsSplashUi/data/batchexecute',
+  headers: {
+    'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+    'Referer': 'https://news.google.com/',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+  },
+  body: reqBody,
+  json: false
+});
+
+// 응답 파싱
+const text = resp;
+const jsonPart = text.split('\n\n')[1];       // 첫 번째 줄은 ")]}'" 접두어
+const parsed = JSON.parse(jsonPart);
+const trimmed = parsed.slice(0, -2);           // 마지막 2개 요소 제거
+const innerData = JSON.parse(trimmed[0][2]);   // 내부 JSON 파싱
+const realUrl = innerData[1];                  // 실제 기사 URL
 ```
 
-### Step 7: 자격 증명 연결
-```bash
-# 워크플로우 GET → credentials 업데이트 → PUT
-# Gmail OAuth2: spDs5DdZcw6Xtski
-# Notion: I34bqtnWMHogzUqF
+**주의사항:**
+- paramsStr의 배열 구조를 절대 변경하지 말 것. `articleId`, `timestamp`, `signature`의 위치가 핵심
+- `timestamp`는 숫자(따옴표 없이), `signature`는 문자열(따옴표 포함)
+- locale 배열의 `"X"` 값은 플레이스홀더로 그대로 사용
+
+### Step 3: Jina Reader API로 기사 본문 마크다운 추출
+
+실제 기사 URL을 Jina Reader에 전달하면 깨끗한 마크다운으로 반환됩니다.
+
+```javascript
+const jinaResp = await this.helpers.httpRequest({
+  method: 'GET',
+  url: 'https://r.jina.ai/' + realUrl,    // URL 앞에 r.jina.ai/ 붙이기만 하면 됨
+  headers: {
+    'Accept': 'text/markdown',
+    'X-Return-Format': 'markdown',
+    'X-Timeout': '20'
+  },
+  timeout: 30000, json: false
+});
+
+const articleMarkdown = jinaResp;  // 깨끗한 마크다운 텍스트
 ```
 
-### Step 8: 테스트 및 활성화
-1. n8n UI에서 "Test Workflow" 실행
-2. 이메일/Notion 정상 확인
-3. Active = true로 변경
+**Jina Reader 무료 사용 조건:**
+- API 키 없이: 분당 20회
+- 무료 API 키 발급 시: 분당 200회
+- 기사 10~20건 처리에는 무료 티어로 충분
+
+### 주의사항 및 실패 케이스
+
+| 실패 원인 | 증상 | 대응 |
+|----------|------|------|
+| signature/timestamp 추출 실패 | HTML에 `data-n-a-sg` 없음 | 해당 기사 스크래핑 포기 |
+| batchexecute 응답에 URL 없음 | `parsed[0][2]`가 null | 해당 기사 스크래핑 포기 |
+| Jina Reader HTTP 451 | Google News URL 직접 전달 시 | 반드시 실제 URL로 디코딩 후 전달 |
+| Jina Reader 콘텐츠 부족 | 반환 텍스트 < 300자 | 페이월/로그인 필요 사이트 |
+| 특정 언론사 반복 실패 | 뉴시스, 브릿지경제 등 | Exclusion Filter에서 source 기반 제외 |
+
+### 스크래핑 불가 언론사 제외 방법
+
+Exclusion Filter 코드에 source 기반 필터 추가:
+
+```javascript
+const excludeSources = ["뉴시스", "브릿지경제"];
+
+return $input.all().filter(item => {
+  const source = item.json.source || '';
+  if (excludeSources.some(s => source.includes(s))) return false;
+  // ... 기존 필터 로직
+  return true;
+});
+```
 
 ---
 
-## 7. AI Summary Code 노드 전문
+## 2. 중복 기사 클러스터링 (Jaccard 단어 유사도)
 
-Gemini API를 2회 호출하는 핵심 코드. 새 워크플로우에서도 동일 구조 사용.
+같은 이슈를 여러 언론사가 보도하면 중복 기사가 쌓입니다. 제목의 단어 유사도를 비교하여 같은 이슈끼리 묶고, 대표 기사 1건만 남깁니다.
 
-**1차 호출**: 전체 트렌드 요약 (이메일용)
-**2차 호출**: 기사별 한줄 요약 + 3줄 요약 (Notion용)
+### 알고리즘
 
-한줄 요약 규칙:
-- `[업체명] 핵심 내용` 형식
-- 한글 30자 이내
-- 주어 = 기사 메인 업체명
+```
+입력: 기사 배열 (title, channel 필드 필수)
+출력: 클러스터 대표 기사 배열 (issueScore 추가)
+```
 
-파싱 방식:
-- `#N` 텍스트 마커로 기사별 분리
-- `한줄:` 마커로 한줄 요약 추출
-- 나머지 `1. 2. 3.`이 3줄 요약
+### n8n Code 노드 구현
+
+```javascript
+const SIMILARITY_THRESHOLD = 0.3;  // 0.3 이상이면 같은 이슈로 판단
+
+// Jaccard 단어 유사도: 두 제목의 단어 집합 비교
+function getWordSimilarity(str1, str2) {
+  const words1 = new Set(str1.replace(/[^가-힣a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 1));
+  const words2 = new Set(str2.replace(/[^가-힣a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 1));
+  if (words1.size === 0 || words2.size === 0) return 0;
+  let intersection = 0;
+  for (const w of words1) { if (words2.has(w)) intersection++; }
+  return intersection / (words1.size + words2.size - intersection);
+}
+
+// 채널별 그룹화 (채널 내에서만 비교하여 성능 확보)
+const channelArticles = {};
+for (const item of $input.all()) {
+  const ch = item.json.channel;
+  if (!channelArticles[ch]) channelArticles[ch] = [];
+  channelArticles[ch].push(item);
+}
+
+const results = [];
+
+for (const [channel, articles] of Object.entries(channelArticles)) {
+  const clusters = [];  // [{ representative, repTitle, count }]
+
+  for (const item of articles) {
+    const title = item.json.title.replace(/ - [^-]+$/, "");  // 언론사 정보 제거
+    let merged = false;
+
+    // 기존 클러스터들과 비교
+    for (const cluster of clusters) {
+      if (getWordSimilarity(cluster.repTitle, title) > SIMILARITY_THRESHOLD) {
+        cluster.count++;     // 같은 이슈 → 카운트만 증가
+        merged = true;
+        break;
+      }
+    }
+
+    if (!merged) {
+      // 새 클러스터 생성 (이 기사가 대표)
+      clusters.push({ representative: item, repTitle: title, count: 1 });
+    }
+  }
+
+  // 이슈점수(=보도 건수) 내림차순 정렬
+  clusters.sort((a, b) => b.count - a.count);
+
+  for (const cluster of clusters) {
+    results.push({
+      json: {
+        ...cluster.representative.json,
+        title: cluster.repTitle,
+        issueScore: cluster.count,        // 같은 이슈 보도 건수
+        similarCount: cluster.count - 1   // 제거된 중복 건수
+      }
+    });
+  }
+}
+
+results.sort((a, b) => b.json.issueScore - a.json.issueScore);
+return results;
+```
+
+### 동작 예시
+
+```
+입력 6건:
+① 이마트, 신세계건설에 5000억 수혈 (뉴스핌)
+② 이마트, 신세계건설에 5000억원 유상증자 (조선비즈)
+③ 이마트, 신세계건설에 5천억 유상증자 (다음)
+④ "고환율에도 해외보다 싸다"…이마트, 와인장터 연다
+⑤ 이마트·롯데마트, AI로 '성장판' 넓힌다
+⑥ 이마트, 신세계건설에 5000억원 유상증자…현금·부동산 (다음)
+
+클러스터링 결과:
+- 클러스터 A: ①②③⑥ (issueScore: 4) → 대표: ① (가장 먼저 수집된 기사)
+- 클러스터 B: ④ (issueScore: 1)
+- 클러스터 C: ⑤ (issueScore: 1)
+
+출력 3건: ①, ④, ⑤
+```
+
+### 임계값 튜닝 가이드
+
+| 임계값 | 효과 | 위험 |
+|--------|------|------|
+| 0.2 | 공격적 병합, 중복 많이 제거 | 다른 이슈가 잘못 합쳐질 수 있음 |
+| **0.3** | **균형** (현재 사용 중) | 일부 유사 기사가 남을 수 있음 |
+| 0.4 | 보수적 병합 | 같은 이슈의 유사 기사가 남음 |
+
+### Levenshtein 대신 Jaccard를 쓰는 이유
+
+| | Levenshtein | Jaccard |
+|---|---|---|
+| 비교 방식 | 문자 단위 편집거리 | 단어 집합 교집합/합집합 |
+| 시간복잡도 | O(m * n) per pair | O(m + n) per pair |
+| 700건 기사 | 타임아웃 발생 | 61ms 완료 |
+| 적합한 상황 | 짧은 문자열, 오타 검출 | 뉴스 제목 유사도 비교 |
 
 ---
 
-## 8. 에러 대응 가이드 (총 21건의 경험)
+## 3. 워크플로우 적용 위치
 
-| 에러 | 원인 | 해결 |
+기존 워크플로우에 적용할 때의 노드 위치:
+
+```
+... → Exclusion Filter
+        → [교체] Deduplication (Jaccard 클러스터링)
+        → Type Classifier
+        → [수정] AI Summary (원문 스크래핑 + 마크다운 생성 추가)
+        → Prepare Output Data
+        → Notion (페이지 생성)
+        → [신규] Build Notion Blocks (마크다운 → 블록 변환)
+        → [신규] Notion Add Content (PATCH blocks/{id}/children)
+```
+
+### 노드별 변경 요약
+
+| 노드 | 변경 | 설명 |
 |------|------|------|
-| tags is read-only | POST 시 tags 포함 | tags 필드 제거 |
-| additional properties | PUT 시 read-only 필드 포함 | name/nodes/connections/settings/staticData만 |
-| Gmail 느낌표 | gmailOAuth2 아닌 자격 증명 | Gmail OAuth2 자격 증명 사용 |
-| Gmail Forbidden | Gmail API 미활성화 | Google Cloud Console에서 Enable |
-| Loop 이후 미실행 | SplitInBatches output 0 미연결 | output 0 → 다음 노드 연결 |
-| Format Email missing / | Python→JSON \n 깨짐 | 별도 변수 분리 |
-| Notion linked DB | 링크된 DB ID 사용 | 원본 DB ID 사용 |
-| Notion resource not found | DB가 n8n-sync와 미공유 | Connections에 n8n-sync 추가 |
-| Notion 속성 undefined | key에 타입 미포함 | `속성명\|타입` 형식 사용 |
-| Gemini 노드 미작동 | n8n 내장 Gemini 노드 호환 문제 | Code + httpRequest 사용 |
-| HTTP Request JSON 깨짐 | 특수문자가 JSON 파괴 | Code 노드에서 JSON.stringify |
-| fetch() 미지원 | n8n 샌드박스 제한 | this.helpers.httpRequest() |
-| Gemini 출력 잘림 | thinking 토큰이 출력 예산 소비 | thinkingBudget: 0 |
-| 에디터 캐시 | API 업데이트가 에디터에 미반영 | F5 새로고침 후 테스트 |
-| onError 마스킹 | continueRegularOutput이 에러 숨김 | 출력 데이터의 error 필드 확인 |
+| Exclusion Filter | 수정 | `excludeSources` 배열 추가 |
+| Deduplication | 교체 | Levenshtein → Jaccard 클러스터링 코드로 교체 |
+| AI Summary | 수정 | 3차 호출 추가 (원문 스크래핑 + Gemini 마크다운 생성) |
+| Build Notion Blocks | 신규 | 마크다운 텍스트 → Notion 블록 JSON 변환 |
+| Notion Add Content | 신규 | HTTP Request로 `PATCH /v1/blocks/{pageId}/children` 호출 |
 
 ---
 
-## 9. 파일 구조
+## 4. Notion 마크다운 본문 블록
 
+Notion API는 마크다운을 직접 받지 않으므로, 마크다운 텍스트를 Notion 블록 객체로 변환해야 합니다.
+
+### 본문 구조
+
+```markdown
+## 📝 요약
+[업체명] 핵심 내용 한줄 요약
+
+1. 포인트1
+2. 포인트2
+3. 포인트3
+
+---
+
+## 📄 본문
+(원문 기반 구조화된 마크다운)
+
+---
+
+## 💡 핵심 인사이트
+- 인사이트1
+- 인사이트2
+
+---
+
+## 📊 메타 정보
+- 📅 발행일: ...
+- 📂 카테고리: ...
+- 🏷️ 태그: ...
+- ⭐ 유형: ...
+- 🔗 원본: ...
 ```
-n8n_news_scrap/
-├── workflow.json          # n8n 워크플로우 JSON (로컬 참조용)
-├── SETUP.md               # 초기 설정 가이드
-├── HANDOVER.md            # 이 인수인계서
-├── error.md               # 에러 이력 (21건)
-├── history.md             # 작업 이력
-├── .gitignore
-└── docs/
-    ├── 01-plan/features/
-    │   └── n8n-news-scraper.plan.md
-    └── 02-design/features/
-        └── n8n-news-scraper.design.md
+
+### Notion Add Content 노드 설정 (HTTP Request)
+
+| 설정 | 값 |
+|------|-----|
+| Method | PATCH |
+| URL | `https://api.notion.com/v1/blocks/{{ $json.pageId }}/children` |
+| Authentication | Predefined Credential Type → notionApi |
+| Headers | `Notion-Version: 2022-06-28` |
+| Body | JSON → `{{ JSON.stringify($json.requestBody) }}` |
+
+### 스크래핑 실패 시
+
+본문에 callout 블록으로 "원문 스크래핑 실패" 표시:
+
+```json
+{
+  "object": "block",
+  "type": "callout",
+  "callout": {
+    "icon": { "type": "emoji", "emoji": "⚠️" },
+    "rich_text": [{ "type": "text", "text": { "content": "원문 스크래핑 실패로 요약을 생성하지 못했습니다." } }]
+  }
+}
 ```
 
 ---
 
-## 10. 새 세션 시작 시 프롬프트 예시
+## 5. 참고 자료
 
-```
-이 폴더의 HANDOVER.md를 읽고, 동일한 구조의 n8n 뉴스 스크래퍼 워크플로우를
-새로 만들어줘.
-
-변경 사항:
-- 키워드: [새 키워드 목록]
-- Notion DB: [새 DB URL]
-- 이메일 수신자: [새 이메일]
-- 제외 키워드: [새 제외 키워드]
-
-기존 워크플로우(6t0bgNHo7yGWM3PD)를 복제해서 위 항목만 변경하면 돼.
-n8n API로 직접 배포해줘.
-```
+- [googlenewsdecoder Python 패키지](https://github.com/SSujitX/google-news-url-decoder) — batchexecute payload 형식의 원본
+- [Jina Reader API](https://jina.ai/reader/) — URL → 마크다운 변환
+- [n8n 워크플로우 #3150](https://n8n.io/workflows/3150) — Google News URL 디코딩 워크플로우
+- [n8n 커뮤니티 토론](https://community.n8n.io/t/solved-base64-decode-google-news-urls-with-a-function-node/29019)
