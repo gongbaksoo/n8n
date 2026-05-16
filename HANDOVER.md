@@ -330,7 +330,79 @@ Notion API는 마크다운을 직접 받지 않으므로, 마크다운 텍스트
 
 ---
 
-## 5. 참고 자료
+## 5. 인프라/운영 설정
+
+### n8n Code 노드 타임아웃
+
+기사 수가 많으면 (50건+) 원문 스크래핑에 20분 이상 소요됩니다. n8n 기본 Code 노드 타임아웃은 **300초(5분)**이므로 반드시 늘려야 합니다.
+
+```yaml
+# docker-compose.yml
+environment:
+  - N8N_RUNNERS_TASK_TIMEOUT=1800   # 30분 (Code 노드 전용)
+```
+
+설정 후 컨테이너 재시작 필요: `docker compose up -d`
+
+워크플로우 전체 타임아웃도 별도로 설정:
+- n8n UI → 워크플로우 Settings → Timeout After → 1시간
+
+### Gmail OAuth 토큰 만료 방지
+
+Google Cloud Console에서 OAuth 앱이 "Testing" 모드이면 refresh token이 **7일마다 만료**됩니다.
+
+**영구 해결**: Google Cloud Console → API 및 서비스 → OAuth 동의 화면 → "앱 게시(Publish App)" → 프로덕션 모드
+
+프로덕션 전환 후 n8n에서 Gmail OAuth2를 한 번 재연결하면 이후 영구 유지됩니다.
+
+### Docker 재시작 후 스케줄 미작동
+
+n8n 컨테이너를 재시작하면 스케줄 트리거(cron)가 재등록되지 않는 경우가 있습니다.
+
+**해결**: 재시작 후 워크플로우를 비활성화 → 재활성화 (n8n UI 또는 API)
+
+### excludeSources 운영 기준
+
+스크래핑 실패하는 언론사를 Exclusion Filter에서 사전 제외합니다.
+
+**제외 기준 (2회 연속 성공 없음)**:
+1. 이번 실행에서 해당 언론사 기사가 실패만 있고 성공 0건
+2. 직전 실행에서도 해당 언론사의 성공 기록이 없음
+
+**현재 제외 목록 (11곳)**:
+뉴시스, 브릿지경제, 헤럴드경제, v.daum.net, 네이트, 아주경제, 파이낸셜뉴스, 게임플, 바이오타임즈, 로이슈, 더스쿠프
+
+```javascript
+// Exclusion Filter 코드에 추가
+const excludeSources = ["뉴시스", "브릿지경제", "헤럴드경제", "v.daum.net", "네이트", "아주경제", "파이낸셜뉴스", "게임플", "바이오타임즈", "로이슈", "더스쿠프"];
+
+// source 필드로 필터링
+if (excludeSources.some(s => source.includes(s))) return false;
+```
+
+### n8n 에디터 캐시 주의사항
+
+API로 워크플로우를 업데이트한 경우, n8n 에디터에서 **노드를 열어 Save**해야 확실히 반영됩니다. F5 새로고침만으로는 불완전할 수 있습니다.
+
+---
+
+## 6. 검증된 실행 결과
+
+| 항목 | 수치 |
+|------|------|
+| 키워드 수 | 17개 |
+| RSS 수집 | ~1,700건 |
+| 24시간 필터 후 | ~380건 |
+| Exclusion 후 | ~260건 |
+| 클러스터링 후 | ~55~70건 (키워드당 Top 5) |
+| 스크래핑 성공률 | ~85% |
+| 전체 실행 시간 | ~25분 |
+| Notion 등록 | 전체 기사 (속성 + 본문 블록) |
+| 이메일 발송 | 1건 (HTML 테이블) |
+
+---
+
+## 7. 참고 자료
 
 - [googlenewsdecoder Python 패키지](https://github.com/SSujitX/google-news-url-decoder) — batchexecute payload 형식의 원본
 - [Jina Reader API](https://jina.ai/reader/) — URL → 마크다운 변환
