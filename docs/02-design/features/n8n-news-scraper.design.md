@@ -721,6 +721,6 @@ workflow.json (n8n export)
 - Deduplication: Levenshtein → Jaccard 단어 유사도 클러스터링 (임계값 0.3, 키워드별 그룹화, 키워드당 Top 5)
 - 원문 스크래핑: Google News batchexecute(signature/timestamp 필수) → Jina Reader API(r.jina.ai) → Gemini 마크다운 구조화
 - Notion 본문: Build Notion Blocks(마크다운→블록 변환) + Notion Add Content(PATCH blocks/{id}/children)
-- 스크래핑 불가 언론사: Exclusion Filter에서 source 기반 제외 (11곳: 뉴시스, 브릿지경제, 헤럴드경제, v.daum.net, 네이트, 아주경제, 파이낸셜뉴스, 게임플, 바이오타임즈, 로이슈, 더스쿠프)
+- 스크래핑 불가 언론사: Exclusion Filter에서 source 기반 제외 (13곳: 뉴시스, 브릿지경제, 헤럴드경제, v.daum.net, 네이트, 아주경제, 파이낸셜뉴스, 게임플, 바이오타임즈, 로이슈, 더스쿠프, 전자신문, SR타임스)
 - Code 노드 타임아웃: N8N_RUNNERS_TASK_TIMEOUT=1800 (30분, Docker 환경변수)
 - Gmail OAuth: Google Cloud Console에서 프로덕션 모드 전환 (7일 토큰 만료 방지)
